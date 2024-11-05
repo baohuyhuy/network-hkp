@@ -1,2 +1,4 @@
 ﻿  Functions.cpp
+D:\MY CODE\ServerTCP\ServerTCP\Functions.cpp(81,78): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
+D:\MY CODE\ServerTCP\ServerTCP\Functions.cpp(94,63): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
   ServerTCP.vcxproj -> D:\MY CODE\ServerTCP\x64\Debug\ServerTCP.exe
