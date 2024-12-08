@@ -1,0 +1,10 @@
+.vs
+x64
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+client/client
+
+server/server
