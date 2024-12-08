@@ -1,16 +1,34 @@
-﻿#include <iostream>
+﻿#pragma once
+
+#ifdef _WIN32
+#  include <WinSock2.h> // Include WinSock2.h before Windows.h or SDKDDKVer.h
+#  ifdef USE_ASIO
+//     Set the proper SDK version before including boost/Asio
+#      include <SDKDDKVer.h>
+//     Note boost/ASIO includes Windows.h. 
+#      include <boost/asio.hpp>
+#   else //  USE_ASIO
+#      include <Windows.h>
+#   endif //  USE_ASIO
+#else // _WIN32
+#  ifdef USE_ASIO
+#     include <boost/asio.hpp>
+#  endif // USE_ASIO
+#endif //_WIN32
+
+#include <iostream>
 #include <string>
-#include <winsock.h>
 #include <fstream>
 #include "json.hpp"
 
 #pragma comment(lib, "Ws2_32.lib")
 
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+
 using namespace std;
 using json = nlohmann::json;
 
 // Các hàm môi trường socket để giao tiếp giữa client và server
-
 WSADATA initializeWinsock();
 
 SOCKET initializeSocket();
@@ -20,10 +38,10 @@ sockaddr_in initializeServerSocket();
 void connectToServer(SOCKET clientSocket, sockaddr_in server);
 
 // Hàm đóng kết nối với server
-void closedConected(SOCKET clientSocket);
+void closeConnection(SOCKET clientSocket);
 
 // Xây dựng yêu cầu từ người dùng để gửi qua cho server
-string buildRequest(const string& title, const string& nameObject, const string& source, const string& destination);
+string createRequest(const string& title, const string& nameObject, const string& source, const string& destination);
 
 // Hàm nhận phản hồi và gửi thư qua cho server
 void receiveAndSend(SOCKET clientSocket);

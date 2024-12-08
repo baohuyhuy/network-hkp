@@ -33,10 +33,10 @@ void bindAndListen(SOCKET& nSocket, sockaddr_in& server);
 
 SOCKET acceptRequestFromClient(SOCKET nSocket);
 
-void ReceiveAndSend(SOCKET& clientSocket, SOCKET& nSocket);
+void processRequests(SOCKET& clientSocket, SOCKET& nSocket);
 
 // Hàm ngắt kết nối với client
-void closeConected(SOCKET clientSocket, SOCKET nSocket);
+void closeConnection(SOCKET clientSocket, SOCKET nSocket);
 
 // Hàm xử lý các yêu cầu của client
 void processRequest(SOCKET& clinetSocket, string jsonRequest);

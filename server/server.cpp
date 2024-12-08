@@ -14,9 +14,9 @@ int main() {
 
 	SOCKET clientSocket = acceptRequestFromClient(nSocket);
 
-	ReceiveAndSend(clientSocket, nSocket);
+	processRequests(clientSocket, nSocket);
 
-	closeConected(clientSocket, nSocket);
+	closeConnection(clientSocket, nSocket);
 
 	return 0;
 }

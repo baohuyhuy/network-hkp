@@ -1,4 +1,7 @@
-﻿#include "lib.h"
+﻿#include "socket.h"
+#include "mail.h"
+#include "commands.h"
+
 
 WSADATA initializeWinsock() {
     WSADATA ws;
@@ -30,8 +33,11 @@ sockaddr_in initializeServerSocket() {
 
     server.sin_family = AF_INET;
     server.sin_port = htons(9909);
-    server.sin_addr.s_addr = inet_addr("127.0.0.1");
-
+    //server.sin_addr.s_addr = inet_addr("127.0.0.1");
+    if (InetPton(AF_INET, L"127.0.0.1", &server.sin_addr) != 1) {
+        cout << "Failed to convert IP address" << endl;
+        // Handle error appropriately
+    }
     return server;
 }
 
@@ -46,7 +52,7 @@ void connectToServer(SOCKET clientSocket, sockaddr_in server) {
         cout << "Connected to server successfully" << endl;
 }
 
-void closedConected(SOCKET clientSocket) {
+void closeConnection(SOCKET clientSocket) {
     // Close the connection to the server
     int closeResult = closesocket(clientSocket);
     if (closeResult == 0) {
@@ -69,35 +75,25 @@ void closedConected(SOCKET clientSocket) {
 void receiveAndSend(SOCKET clientSocket) {
     string sendBuffer, receiveBuffer;
     receiveBuffer.resize(1024);
+    
+	// connect to imap server to receive command from email
+    imaps* conn = createIMAPConnection();
 
     while (true) {
-        string title, nameObject; // dùng chung cho mọi chức năng
-        string source, destination; // dùng riêng cho chức năng copy file
+        string title = "";
+        string nameObject = ""; // dùng chung cho mọi chức năng
+        string source = "";
+        string destination = ""; // dùng riêng cho chức năng copy file
+        
+        if (!receivedNewCommand(*conn, title, nameObject, source, destination)) continue;
 
+        cout << "Processing " << title << " " << nameObject << endl;
         cout << endl;
 
-        cout << "Please enter the function you want to do: ";
-        getline(cin, title);
-
-        if (title == "endProgram") {
-            closedConected(clientSocket);
+        if (title == END_PROGRAM) {
+            closeConnection(clientSocket);
         }
-
-        if (title == "startApp" || title == "stopApp" || title == "startService" ||
-            title == "stopService" || title == "sendFile" || title == "deleteFile" || 
-            title == "keyLogger") {
-
-            cout << "Please enter the object you want to do the function on: ";
-            getline(cin, nameObject);
-        }
-        else if(title == "copyFile") {
-            cout << "Enter the source file path: ";
-            getline(cin, source);
-            cout << "Enter the destination file path: ";
-            getline(cin, destination);
-        }
-
-        sendBuffer = buildRequest(title, nameObject, source, destination);
+        sendBuffer = createRequest(title, nameObject, source, destination);
 
         int sendResult = send(clientSocket, sendBuffer.c_str(), sendBuffer.length(), 0);
         if (sendResult == SOCKET_ERROR) {
@@ -106,13 +102,15 @@ void receiveAndSend(SOCKET clientSocket) {
         }
 
         processResponse(title, clientSocket);
+        
+        cout << endl;
     }
 
-    closesocket(clientSocket);
-    WSACleanup();
+	// close connection to imap server
+    delete conn;
 }
 
-string buildRequest(const string& title,const string& nameObject, const string& source, const string& destination) {
+string createRequest(const string& title,const string& nameObject, const string& source, const string& destination) {
     json j;
 
     if(title != "") j["title"] = title;

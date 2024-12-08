@@ -126,7 +126,7 @@ void sendJSON(SOCKET& clientSocket, const string& jsonResponse) {
     }
 }
 
-void ReceiveAndSend(SOCKET& clientSocket, SOCKET& nSocket) {
+void processRequests(SOCKET& clientSocket, SOCKET& nSocket) {
     string receiveBuffer, sendBuffer;
 
     while (true) {
@@ -154,11 +154,9 @@ void ReceiveAndSend(SOCKET& clientSocket, SOCKET& nSocket) {
         }
 
     }
-
-    //closeConected(clientSocket, nSocket);
 }
 
-void closeConected(SOCKET clientSocket, SOCKET nSocket) {
+void closeConnection(SOCKET clientSocket, SOCKET nSocket) {
     // close connected with client
     closesocket(clientSocket);
 

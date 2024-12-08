@@ -1,4 +1,4 @@
-﻿#include "lib.h"
+﻿#include "socket.h"
 
 int main() {
 
@@ -11,6 +11,8 @@ int main() {
 	connectToServer(clientSocket, server);
 
 	receiveAndSend(clientSocket);
+
+	closeConnection(clientSocket);
 
 	return 0;
  }

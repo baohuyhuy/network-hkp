@@ -6,5 +6,7 @@ x64
 *.vcxproj.user
 
 client/client
+client/vcpkg_installed
+client/.env.h
 
 server/server
