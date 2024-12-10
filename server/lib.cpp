@@ -493,6 +493,9 @@ string deleteFile(string& filePath) {
 
 // Copy file
 string copyFile(string sourceFile, string destinationFile) {
+    cout << sourceFile << endl;
+    cout << destinationFile << endl;
+	system("pause");
     ifstream source(sourceFile, ios::binary);
 
     json jsonResponse;
@@ -974,9 +977,11 @@ void processRequest(SOCKET& clientSocket, string jsonRequest) {
 
             if (sendFile(clientSocket, fileName)) {
                 temp["result"] = "File copied and sent successfully";
+                temp["status"] = 1;
             }
             else {
                 temp["result"] = "Failed to copy file and send it";
+				temp["status"] = 0;
             }
 
             jsonResponse = temp.dump();

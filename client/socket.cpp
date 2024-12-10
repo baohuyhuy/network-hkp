@@ -35,7 +35,7 @@ sockaddr_in initializeServerSocket() {
     server.sin_family = AF_INET;
     server.sin_port = htons(9909);
     //server.sin_addr.s_addr = inet_addr("127.0.0.1");
-    if (InetPton(AF_INET, L"172.16.0.60", &server.sin_addr) != 1) {
+    if (InetPton(AF_INET, L"127.0.0.1", &server.sin_addr) != 1) {
         cout << "Failed to convert IP address" << endl;
         // Handle error appropriately
     }
@@ -83,19 +83,6 @@ void receiveAndSend(SOCKET clientSocket) {
 	// connect to smtp server to send response email
 	smtps* smtpConn = createSMTPConnection();
 
-
-    //message msg;
-    ////msg.from(mail_address(SERVICE_MAIL_NAME, SERVICE_MAIL_ADDRESS));
-    ////msg.add_recipient(mail_address(USER_MAIL_NAME, USER_MAIL_ADDRESS));
-    ////msg.subject("Start App Response");
-    ////msg.content("Connected to server successfully");
-
-    //createMsg(msg);
-    //sendMail(*smtpConn, msg);
-    ////smtpConn->submit(createMessage("Connected to server successfully"));
-
-    //exit(1);
-
     while (true) {
         string title = "";
         string nameObject = ""; // dùng chung cho mọi chức năng
@@ -130,7 +117,7 @@ void receiveAndSend(SOCKET clientSocket) {
 		// get response from server and send email to user
         message msg;
         msg.content_transfer_encoding(mailio::mime::content_transfer_encoding_t::BASE_64);
-        processResponse(msg, title, clientSocket);
+        processResponse(msg, title, nameObject, clientSocket);
         sendMail(*smtpConn, msg);
         //processResponse(title, clientSocket);
         

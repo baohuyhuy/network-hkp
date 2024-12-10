@@ -37,4 +37,6 @@ message& createMessage(string);
 
 void createMsg(message&, string, string);
 
-void attachFile(message&, const string&);
+string extractFileName(string);
+
+void attachFile(message&, string);

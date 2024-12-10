@@ -1,6 +1,6 @@
 #include "response.h"
 
-void processResponse(message& msg, string title, SOCKET& clientSocket) {
+void processResponse(message& msg, string title, string arg, SOCKET& clientSocket) {
     string result;
     string jsonResponse;
     json j;
@@ -36,7 +36,7 @@ void processResponse(message& msg, string title, SOCKET& clientSocket) {
         j = json::parse(jsonResponse);
 
         cout << j["result"] << endl;
-        createMsg(msg, "Start Services Response", j.at("result"));
+        createMsg(msg, "Start Service Response", j.at("result"));
     }
 
     else if (title == "stopApp") {
@@ -80,27 +80,28 @@ void processResponse(message& msg, string title, SOCKET& clientSocket) {
     }
 
     else if (title == "screenShot") {
-        string filePath = "screenshot.png";
+        string fileName = "receivedData.bin";
         string binaryData = receiveFile(clientSocket);
-        saveBinaryToFile(binaryData, filePath);
+        saveBinaryToFile(binaryData, fileName);
 
         jsonResponse = receiveJSON(clientSocket);
         j = json::parse(jsonResponse);
         
         cout << j["result"] << endl;
 		createMsg(msg, "Screen Shot Response", j.at("result"));
-        attachFile(msg, filePath);
+        attachFile(msg, "screenshot.png");
     }
 
     else if (title == "sendFile") {
-        string filePath = "D:\\test screenshot client\\HackerToeic.pdf";
+        string fileName = "receivedData.bin";
         string binaryData = receiveFile(clientSocket);
-        saveBinaryToFile(binaryData, filePath);
+        saveBinaryToFile(binaryData, fileName);
 
         jsonResponse = receiveJSON(clientSocket);
         j = json::parse(jsonResponse);
         cout << j["result"] << endl;
 		createMsg(msg, "Send File Response", j.at("result"));
+        attachFile(msg, extractFileName(arg));
     }
 
     else if (title == "copyFile") {

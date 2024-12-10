@@ -102,7 +102,10 @@ bool receivedNewCommand(imaps& conn, string& title, string& nameObject, string& 
     else if (title == COPY_FILE) {
         stringstream ss(body);
 		getline(ss, source, '\n');
+        cout << source << endl;
 		getline(ss, destination, '\n');
+        cout << destination << endl;
+        system("PAUSE");
     }
 }
 
@@ -129,10 +132,15 @@ void createMsg(message& msg, string subject, string body) {
     msg.content(body);
 }
 
-void attachFile(message& msg, const string& path) {
-    ifstream ifs("screenshot.png", std::ios::binary);
+string extractFileName(string filePath) {
+	size_t found = filePath.find_last_of("/\\");
+	return filePath.substr(found + 1);
+}
+
+void attachFile(message& msg, string fileName) {
+    ifstream ifs("receivedData.bin", ios::binary);
     list<tuple<std::istream&, string_t, message::content_type_t>> atts;
-    atts.push_back(make_tuple(std::ref(ifs), "screenshot.png", message::content_type_t(message::media_type_t::IMAGE, "png")));
+    atts.push_back(make_tuple(ref(ifs), fileName, message::content_type_t(message::media_type_t::APPLICATION, "octet-stream")));
     msg.attach(atts);
 }
 

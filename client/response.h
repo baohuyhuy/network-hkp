@@ -8,4 +8,4 @@
 
 using namespace std;
 
-void processResponse(message& msg, string, SOCKET&);
+void processResponse(message& msg, string, string, SOCKET&);
