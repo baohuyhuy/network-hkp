@@ -46,9 +46,6 @@ string createRequest(const string& title, const string& nameObject, const string
 // Hàm nhận phản hồi và gửi thư qua cho server
 void receiveAndSend(SOCKET clientSocket);
 
-// Hàm xử lý phản hồi từ server
-void processResponse(string title, SOCKET& clientSocket);
-
 // Hàm xử lý chức năng list apps
 string processListApps(json j);
 

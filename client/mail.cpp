@@ -5,7 +5,7 @@
 // connect to the imap server
 imaps* createIMAPConnection() {
     try {
-		imaps* conn = new imaps(IMAP_SERVER, 993);
+		imaps* conn = new imaps(IMAP_SERVER, IMAP_PORT);
         conn->authenticate(SERVICE_MAIL_ADDRESS, SERVICE_MAIL_PASSWORD, imaps::auth_method_t::LOGIN);
         return conn;
     }
@@ -19,7 +19,7 @@ imaps* createIMAPConnection() {
 }
 
 // get the latest unread message
-bool getNewMessage(imaps& conn, message& msg) {
+bool getNewMail(imaps& conn, message& msg) {
     try {
 		// select the inbox folder
         conn.select("Inbox");
@@ -80,8 +80,8 @@ bool receivedNewCommand(imaps& conn, string& title, string& nameObject, string& 
     // set the line policy to mandatory, so longer lines could be parsed
     msg.line_policy(codec::line_len_policy_t::MANDATORY);
 
-	// if there is no new message, return false
-    if (!getNewMessage(conn, msg)) return false;
+	// if there is no new mail, return false
+    if (!getNewMail(conn, msg)) return false;
 
 	// get the message subject
 	//title = toLowerCase(msg.subject());
@@ -104,4 +104,46 @@ bool receivedNewCommand(imaps& conn, string& title, string& nameObject, string& 
 		getline(ss, source, '\n');
 		getline(ss, destination, '\n');
     }
+}
+
+// connect to the smtp server
+smtps* createSMTPConnection() {
+	try {
+		smtps* conn = new smtps(SMTP_SERVER, SMTP_PORT);
+        conn->authenticate(SERVICE_MAIL_ADDRESS, SERVICE_MAIL_PASSWORD, smtps::auth_method_t::START_TLS);
+        return conn;
+	}
+	catch (smtp_error& exc) {
+		cout << exc.what() << endl;
+	}
+	catch (dialog_error& exc) {
+		cout << exc.what() << endl;
+	}
+	exit(EXIT_FAILURE);
+}
+
+void createMsg(message& msg, string subject, string body) {
+    msg.from(mail_address(SERVICE_MAIL_NAME, SERVICE_MAIL_ADDRESS));
+    msg.add_recipient(mail_address(USER_MAIL_NAME, USER_MAIL_ADDRESS));
+    msg.subject(subject);
+    msg.content(body);
+}
+
+void attachFile(message& msg, const string& path) {
+    ifstream ifs("screenshot.png", std::ios::binary);
+    list<tuple<std::istream&, string_t, message::content_type_t>> atts;
+    atts.push_back(make_tuple(std::ref(ifs), "screenshot.png", message::content_type_t(message::media_type_t::IMAGE, "png")));
+    msg.attach(atts);
+}
+
+void sendMail(smtps& conn, message& msg) {
+	try {
+		conn.submit(msg);
+	}
+	catch (smtp_error& exc) {
+		cout << exc.what() << endl;
+	}
+	catch (dialog_error& exc) {
+		cout << exc.what() << endl;
+	}
 }

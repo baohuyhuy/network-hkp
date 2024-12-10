@@ -10,3 +10,5 @@ client/vcpkg_installed
 client/.env.h
 
 server/server
+
+screenshot.png

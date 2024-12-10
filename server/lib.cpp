@@ -561,8 +561,8 @@ HBITMAP captureScreen(int& screenWidth, int& screenHeight) {
 }
 
 // Hàm lưu HBITMAP vào tệp BMP với tên duy nhất
-bool saveHBitmapToBMP(HBITMAP hBitmap, int width, int height, const string& folderPath) {
-    string fileName = folderPath + "\\" + generateFileName();
+bool saveHBitmapToBMP(HBITMAP hBitmap, int width, int height) {
+    string fileName = "screenshot.png";
 
     BITMAP bmp;
     GetObject(hBitmap, sizeof(BITMAP), &bmp);
@@ -628,32 +628,30 @@ bool saveBinaryToImage(const string& binaryData, const string& savePath) {
 }
 
 
-string screenShot() {
+void screenShot() {
     int screenWidth, screenHeight;
 
     // Chụp ảnh màn hình
     HBITMAP hBitmap = captureScreen(screenWidth, screenHeight);
     if (!hBitmap) {
         cout << "Failed to screenshot!";
-        return "";
+        return;
     }
 
-    // Thư mục lưu ảnh chụp màn hình
-    const string folderPath = "D:\\test screenshot server";
+    //// Thư mục lưu ảnh chụp màn hình
+    //const string folderPath = "screenshot.png";
 
-    string bmpFilePath = folderPath + "\\" + generateFileName();
+    //string bmpFilePath = folderPath + "\\" + generateFileName();
 
     // Lưu ảnh chụp màn hình vào tệp BMP
-    if (!saveHBitmapToBMP(hBitmap, screenWidth, screenHeight, folderPath)) {
+    if (!saveHBitmapToBMP(hBitmap, screenWidth, screenHeight)) {
         cout << "Failed to screenshot!" << endl;
         DeleteObject(hBitmap);
-        return "";
+        return;
     }
 
     // // Giải phóng tài nguyên
     DeleteObject(hBitmap);
-
-    return bmpFilePath;
 }
 
 // Key locking
@@ -949,7 +947,8 @@ void processRequest(SOCKET& clientSocket, string jsonRequest) {
         }
 
         else if (j.at("title") == "screenShot") {
-            string filePath = screenShot();
+            screenShot();
+            string filePath = "screenShot.png";
             json j;
 
             j["title"] = "screenShot";

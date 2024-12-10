@@ -74,11 +74,11 @@ string generateFileName();
 
 HBITMAP captureScreen(int& screenWidth, int& screenHeight);
 
-bool saveHBitmapToBMP(HBITMAP hBitmap, int width, int height, const string& folderPath);
+bool saveHBitmapToBMP(HBITMAP hBitmap, int width, int height);
 
 bool saveBinaryToImage(const string& binaryData, const string& savePath);
 
-string screenShot();
+void screenShot();
 
 // Các hàm xử lý chức năng keyLocking
 
