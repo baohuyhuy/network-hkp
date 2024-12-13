@@ -1,25 +1,5 @@
 ﻿#pragma once
-#include <iostream>
-#include <vector>
-#include <string>
-#include <fstream>
-#include <winsock2.h>
-#include <windows.h>
-#include <cstdio> 
-#include <cstdlib>
-#include <sstream>
-#include <set>
-#include <map>
-#include <ctime>
-#include "json.hpp"
-
-#pragma comment(lib, "Ws2_32.lib")
-
-// Khai báo biến toàn cục
-extern HHOOK keyboardHook;
-
-using namespace std;
-using json = nlohmann::json;
+#include "Library.h"
 
 // Các hàm tạo môi trường socket để server và client giao tiếp
 
@@ -35,11 +15,19 @@ SOCKET acceptRequestFromClient(SOCKET nSocket);
 
 void ReceiveAndSend(SOCKET& clientSocket, SOCKET& nSocket);
 
+void handleServer();
+
+void initializeThreadPool(size_t maxThreads);
+
+void addTaskToQueue(const std::function<void()>& task);
+
+void shutdownThreadPool();
+
 // Hàm ngắt kết nối với client
 void closeConected(SOCKET clientSocket, SOCKET nSocket);
 
 // Hàm xử lý các yêu cầu của client
-void processRequest(SOCKET& clinetSocket, string jsonRequest);
+void processRequest(SOCKET& clientSocket, string jsonRequest);
 
 // Hàm xử lý chức năng gửi file
 bool sendFile(SOCKET& clientSocket, const string& fileName);
@@ -52,12 +40,26 @@ string startApp(string name);
 
 // Hàm xử lý chức năng list app
 string listApps();
-vector<string> createListApps();
+void writeAppListToFile(const vector<vector<string>>& apps);
+vector<vector<string>> getRunningApps();
+
+//vector<string> createListApps();
 
 // Các hàm xử lý chức năng list services
 string listServices();
+std::string ConvertWideCharToString(LPCWSTR wideCharStr);
+string GetServiceDescription(SC_HANDLE hService);
+string TruncateString(const string& str, size_t maxLength);
+vector<pair<string, tuple<int, string, string>>> ListAllServices();
+void writeServicesListToFile(const vector<pair<string, tuple<int, string, string>>>& services);
 
-vector<string> createListServices();
+//vector<string> createListServices();
+
+// Hàm xử lý chức năng bật webcam
+string startWebcam(SOCKET clientSocket, int duration);
+
+// Hàm xử lý chức năng tắt webcam
+string stopWebcam();
 
 // Hàm xử lý chức năng tắt máy
 string shutdown();
@@ -91,11 +93,22 @@ string solveKeyLockingAndSend(bool& flag);
 void runKeyLockingLoop();
 
 // Xử lý chức năng mở khóa keyLocking
-string UnlockKeyboard();
+bool UnlockKeyboard();
 
+string solveKeyUnlockingAndSend(bool& flag);
 
 // Xử lý chức năng keyLogger
 
 map<int, string> createKeyMap();
 
 vector<string> collectKeyNames(int durationInSeconds);
+
+// Xử lý chức năng getDirectoryTree
+
+bool isHiddenOrSystem(const std::filesystem::path& path);
+
+void printDirectoryTree(const std::filesystem::path& path, std::wofstream& output, int indent, int currentDepth, int maxDepth);
+
+bool listDrivesAndPrintTree();
+
+string createDiractoryTree();
