@@ -32,6 +32,40 @@ SOCKET initializeSocket() {
     return nSocket;
 }
 
+void sendBroadcast() {
+    SOCKET udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (udpSocket == INVALID_SOCKET) {
+        cout << "Failed to create UDP socket: " << WSAGetLastError() << endl;
+        return;
+    }
+    cout << "UDP socket created successfully for broadcasting" << endl;
+
+    // Cho phép gửi broadcast
+    BOOL broadcastEnable = TRUE;
+    if (setsockopt(udpSocket, SOL_SOCKET, SO_BROADCAST, (char*)&broadcastEnable, sizeof(broadcastEnable)) < 0) {
+        cout << "Failed to enable broadcast: " << WSAGetLastError() << endl;
+        closesocket(udpSocket);
+        return;
+    }
+
+    sockaddr_in broadcastAddr;
+    broadcastAddr.sin_family = AF_INET;
+    broadcastAddr.sin_port = htons(9909); // Cổng broadcast
+    broadcastAddr.sin_addr.s_addr = INADDR_BROADCAST;
+
+    const char* message = "Server_IP=127.0.0.1;Port=9909";
+
+    cout << "Broadcasting server information..." << endl;
+    while (!stop) {  // Gửi liên tục cho đến khi kết nối thành công
+        sendto(udpSocket, message, strlen(message), 0,
+            (sockaddr*)&broadcastAddr, sizeof(broadcastAddr));
+        Sleep(5000); // Gửi mỗi giây
+    }
+
+    cout << "Broadcast stopped." << endl;
+    closesocket(udpSocket);
+}
+
 sockaddr_in initializeServerSocket() {
     sockaddr_in server;
 
@@ -73,7 +107,10 @@ SOCKET acceptRequestFromClient(SOCKET nSocket) {
         cout << "Failed to accept connection" << endl;
         return EXIT_FAILURE;
     }
-    else cout << "Client connected successfully" << endl;
+    else {
+        stop = true;
+        cout << "Client connected successfully" << endl;
+    }
 
     return clientSocket;
 }
@@ -121,85 +158,33 @@ void shutdownThreadPool() {
     }
 }
 
-//void ReceiveAndSend(SOCKET& clientSocket, SOCKET& nSocket) {
-//    string receiveBuffer, sendBuffer;
-//
-//    while (true) {
-//        receiveBuffer.resize(512);
-//
-//        int recvResult = recv(clientSocket, &receiveBuffer[0], receiveBuffer.size(), 0);
-//
-//        if (recvResult <= 0) {
-//            cout << "Failed to receive data from client" << endl;
-//            break;
-//        }
-//
-//        else {
-//            receiveBuffer.resize(recvResult);
-//
-//            // Kiểm tra xem có yêu cầu thoát hay không
-//            if (receiveBuffer == "endProgram") {
-//                cout << "Exit command received. Closing connection" << endl;
-//                break;
-//            }
-//
-//            //processRequest(clientSocket, receiveBuffer);
-//
-//            //addTaskToQueue([&clientSocket, receiveBuffer]() {
-//            //    // Sử dụng std::ref để truyền tham chiếu cho clientSocket
-//            //    processRequest(clientSocket, receiveBuffer);
-//            //});
-//
-//            addTaskToQueue([clientSocket, receiveBuffer]() mutable {
-//                processRequest(clientSocket, receiveBuffer);
-//            });
-//            
-//            // // Tạo một luồng mới để xử lý yêu cầu từ client
-//            //std::thread processingThread(processRequest, std::ref(clientSocket), receiveBuffer);
-//
-//            //// Đảm bảo rằng luồng sẽ kết thúc khi hoàn thành
-//            //processingThread.detach();  // Dùng detach để cho phép luồng chạy độc lập
-//        }
-//
-//    }
-//}
-
 void ReceiveAndSend(SOCKET& clientSocket, SOCKET& nSocket) {
-    string receiveBuffer;
-
-    // Chuyển socket sang chế độ non-blocking
-    u_long mode = 1;
-    ioctlsocket(clientSocket, FIONBIO, &mode);
+    string receiveBuffer, sendBuffer;
 
     while (true) {
         receiveBuffer.resize(512);
 
-        // Nhận dữ liệu từ client
         int recvResult = recv(clientSocket, &receiveBuffer[0], receiveBuffer.size(), 0);
 
         if (recvResult <= 0) {
-            if (recvResult == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK) {
-                continue; // Không có dữ liệu, tiếp tục vòng lặp
-            }
-            else {
-                std::cout << "Failed to receive data from client.\n";
-                break;
-            }
-        }
-
-        receiveBuffer.resize(recvResult);
-
-        // Kiểm tra lệnh thoát
-        if (receiveBuffer == "endProgram") {
-            std::cout << "Exit command received. Closing connection.\n";
-            closesocket(clientSocket);
+            cout << "Failed to receive data from client" << endl;
             break;
         }
 
-        // Đẩy công việc vào hàng đợi xử lý
-        addTaskToQueue([clientSocket, receiveBuffer]() mutable {
-            processRequest(clientSocket, receiveBuffer);
+        else {
+            receiveBuffer.resize(recvResult);
+
+            // Kiểm tra xem có yêu cầu thoát hay không
+            if (receiveBuffer == "endProgram") {
+                cout << "Exit command received. Closing connection" << endl;
+                break;
+            }
+
+            addTaskToQueue([clientSocket, receiveBuffer]() mutable {
+                processRequest(clientSocket, receiveBuffer);
             });
+        }
+
     }
 }
 
@@ -227,7 +212,11 @@ void handleServer() {
     // Liên kết và bắt đầu lắng nghe
     bindAndListen(nSocket, server);
 
-    // Chấp nhận kết nối từ client và tạo luồng phụ để xử lý từng client
+    // Chạy broadcast trên luồng riêng
+    thread broadcastThread(sendBroadcast);
+    broadcastThread.detach();
+
+    // Chấp nhận kết nối từ client
     SOCKET clientSocket = acceptRequestFromClient(nSocket);
 
     ReceiveAndSend(clientSocket, nSocket);
@@ -250,7 +239,6 @@ bool sendFile(SOCKET& clientSocket, const string& fileName) {
     string fileBuffer((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
 
     int fileSize = fileBuffer.size();
-    //cout << fileSize << endl;
 
     send(clientSocket, reinterpret_cast<char*>(&fileSize), sizeof(fileSize), 0);
 
@@ -346,11 +334,6 @@ string startService(string name) {
 bool createWebcamVideo(int duration) {
     cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_SILENT);
 
-    //// Nhập thời gian quay video từ người dùng
-    //int duration; // Thời gian quay video (giây)
-    //std::cout << "Nhap thoi gian quay video (giay): ";
-    //std::cin >> duration;
-
     // Mở camera
     cv::VideoCapture cap(0); // Camera mặc định (0)
     if (!cap.isOpened()) {
@@ -412,8 +395,6 @@ bool createWebcamVideo(int duration) {
 }
 
 string startWebcam(SOCKET clientSocket, int duration) {
-    //string command = "start microsoft.windows.camera:";
-    //int result = system(command.c_str());
 
     bool result = createWebcamVideo(duration);
 
@@ -522,47 +503,6 @@ string listApps() {
     return jsonResponse.dump();
 }
 
-//vector<string> createListApps() {
-//    string command = "powershell -Command \"gps | where {$_.mainwindowhandle -ne 0} | select-object name\"";
-//
-//    // Sử dụng hàm _popen để đọc file từ lệnh command ở trên
-//    FILE* pipe = _popen(command.c_str(), "r");
-//    if (!pipe) {
-//        cerr << "Failed to run command." << endl;
-//        return {};
-//    }
-//
-//    // Tạo vector để lưu danh sách các ứng dụng đang hoạt động
-//    vector<string> listApps;
-//
-//    // Tạo một buffer để đọc dữ liệu theo từng dòng
-//    char buffer[256];
-//
-//
-//    // Đọc dữ liệu bằng stringstream
-//    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-//        istringstream ss(buffer);
-//        string appName;
-//
-//        // Lấy tên ứng dụng ở dòng hiện tại
-//        ss >> appName;
-//
-//        // Bỏ qua dòng tiêu đề nếu dòng hiện tại là "Name" hoặc "----"
-//        if (appName == "Name" || appName == "----") {
-//            continue;
-//        }
-//
-//        // Kiểm tra tên ứng dụng có hợp lệ không
-//        if (!appName.empty()) {
-//            listApps.push_back(appName);
-//        }
-//    }
-//
-//    _pclose(pipe);
-//
-//    return listApps;
-//}
-
 // Hàm để ghi dữ liệu vào tệp listApps.txt
 void writeAppListToFile(const vector<vector<string>>& apps) {
     ofstream outFile("appsList.txt");
@@ -575,9 +515,9 @@ void writeAppListToFile(const vector<vector<string>>& apps) {
     // Ghi tiêu đề bảng vào tệp
     outFile << setw(30) << left << "Application Name"
         << setw(10) << left << "PID"
-        << setw(25) << left << "Memory Usage (GB)"
-        << setw(50) << left << "Path" << endl;
-    outFile << string(105, '-') << endl;
+        << setw(25) << left << "Memory Usage (GB)" << endl;
+        // << setw(50) << left << "Path" 
+    outFile << string(60, '-') << endl;
 
     // Ghi dữ liệu các tiến trình vào tệp
     for (const auto& app : apps) {
@@ -585,7 +525,7 @@ void writeAppListToFile(const vector<vector<string>>& apps) {
         outFile << setw(30) << left << app[0]        // Application Name
             << setw(15) << left << app[1]        // PID
             << setw(20) << left << fixed << setprecision(2) << memoryInGB   // Memory Usage in GB
-            << setw(50) << left << app[3]        // Path
+            // << setw(50) << left << app[3]        // Path
             << endl;
     }
 
@@ -619,12 +559,12 @@ vector<vector<string>> getRunningApps() {
         istringstream ss(line);
         vector<string> appDetails;
 
-        string name, pid, memory, path;
+        string name, pid, memory;
 
         // Đọc các giá trị từ dòng
         ss >> name >> pid >> memory;
-        getline(ss, path); // Đọc đường dẫn với getline để lấy chính xác đường dẫn có khoảng trắng
-        path.erase(remove(path.begin(), path.end(), ' '), path.end()); // Loại bỏ khoảng trắng thừa ở đầu và cuối
+        //getline(ss, path); // Đọc đường dẫn với getline để lấy chính xác đường dẫn có khoảng trắng
+        //path.erase(remove(path.begin(), path.end(), ' '), path.end()); // Loại bỏ khoảng trắng thừa ở đầu và cuối
 
         // Chuyển đổi Memory Usage từ byte sang GB
         long long memoryInBytes = stoll(memory); // Chuyển chuỗi sang long long
@@ -633,9 +573,8 @@ vector<vector<string>> getRunningApps() {
         // Lưu lại thông tin
         appDetails.push_back(name);
         appDetails.push_back(pid);
-        appDetails.push_back(to_string(memoryInGB)); // Chuyển thành chuỗi và lưu lại
-        appDetails.push_back(path);
-
+        appDetails.push_back(to_string(memoryInGB)); 
+        // appDetails.push_back(path);
         appList.push_back(appDetails);
     }
 
@@ -646,7 +585,7 @@ vector<vector<string>> getRunningApps() {
 // listServices
 
 // Hàm chuyển đổi từ Wide Char (Unicode) sang std::string (UTF-8)
-std::string ConvertWideCharToString(LPCWSTR wideCharStr) {
+string ConvertWideCharToString(LPCWSTR wideCharStr) {
     int bufferSize = WideCharToMultiByte(CP_UTF8, 0, wideCharStr, -1, nullptr, 0, nullptr, nullptr);
     string result(bufferSize - 1, 0); // bufferSize bao gồm ký tự null cuối
     WideCharToMultiByte(CP_UTF8, 0, wideCharStr, -1, &result[0], bufferSize, nullptr, nullptr);
@@ -740,8 +679,8 @@ vector<pair<string, tuple<int, string, string>>> ListAllServices() {
         CloseServiceHandle(hService);
 
         // Cắt ngắn tên dịch vụ và mô tả nếu quá dài
-        serviceName = TruncateString(serviceName, 35);  // Cắt tên dịch vụ nếu quá 40 ký tự
-        description = TruncateString(description, 35);  // Cắt mô tả nếu quá 40 ký tự
+        serviceName = TruncateString(serviceName, 30);  // Cắt tên dịch vụ nếu quá 40 ký tự
+        description = TruncateString(description, 30);  // Cắt mô tả nếu quá 40 ký tự
 
         // Thêm vào vector
         servicesInfo.push_back({ serviceName, make_tuple(pid, description, status) });
@@ -805,108 +744,27 @@ string listServices() {
     return jsonResponse.dump();
 }
 
-//vector<string> createListServices() {
-//    // Lệnh PowerShell để lấy tên của tất cả các tiến trình đang chạy
-//    string command = "powershell -Command \"Get-Process | Select-Object -ExpandProperty ProcessName\"";
-//
-//    // Sử dụng hàm _popen để mở pipe và chạy lệnh
-//    FILE* pipe = _popen(command.c_str(), "r");
-//    if (!pipe) {
-//        cerr << "Failed to run command." << endl;
-//        return {};
-//    }
-//
-//    // Tạo set để lưu danh sách các tiến trình duy nhất
-//    set<string> uniqueProcesses;
-//
-//    // Tạo một buffer để đọc dữ liệu theo từng dòng
-//    char buffer[256];
-//
-//    // Đọc dữ liệu từng dòng
-//    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-//        istringstream ss(buffer);
-//        string processName;
-//
-//        // Lấy tên tiến trình ở dòng hiện tại
-//        ss >> processName;
-//
-//        // Kiểm tra tên tiến trình có hợp lệ không
-//        if (!processName.empty()) {
-//            uniqueProcesses.insert(processName); // Thêm vào set
-//        }
-//    }
-//
-//    _pclose(pipe);
-//
-//    // Chuyển đổi set về vector
-//    vector<string> listProcesses(uniqueProcesses.begin(), uniqueProcesses.end());
-//
-//    return listProcesses;
-//}
+// Thực hiện chức năng restart and shutdown
 
-string shutdown() { // chưa test
+void restart() {
+    // Tắt tất cả tiến trình đang chạy
     string command = "taskkill /F /FI \"STATUS eq RUNNING\"";
-    int result1 = system(command.c_str());
+    system(command.c_str());
 
-    command = "shutdown /s /t 0";
-    int result2 = system(command.c_str());
-
-    json jsonResponse;
-
-    jsonResponse["title"] = "shutdown";
-
-    if (result1 == 0 && result2 == 0)
-        jsonResponse["result"] = "Your computer will be shut down";
-    else
-        jsonResponse["result"] = "Unable to shutdown the computer";
-
-    return jsonResponse.dump();
+    // Khởi động lại máy tính 
+    command = "shutdown /r /t 0";
+    system(command.c_str());
 }
 
-// Thực hiện chức năng restart and shutdown
-// Tuy nhiên chưa hoàn thiện nên không cần quan tâm
+void shutdown() { 
+    // Tắt tất cả tiến trình đang chạy
+    string command = "taskkill /F /FI \"STATUS eq RUNNING\"";
+    system(command.c_str());
 
-//void restart(SOCKET& clientSocket) {
-//    // Tắt tất cả tiến trình đang chạy
-//    string command = "taskkill /F /FI \"STATUS eq RUNNING\"";
-//    int result1 = system(command.c_str());
-//
-//    // Tạo JSON phản hồi
-//    json jsonResponse;
-//    jsonResponse["title"] = "restart";
-//
-//    if (result1 == 0)
-//        jsonResponse["result"] = "Your computer will be restarted.";
-//    else
-//        jsonResponse["result"] = "Unable to stop running processes.";
-//
-//    // Gửi JSON phản hồi trước khi khởi động lại
-//    sendJSON(clientSocket, jsonResponse.dump());
-//
-//    // Khởi động lại máy tính sau khi gửi JSON
-//    command = "shutdown /r /t 0";
-//    system(command.c_str());
-//}
-
-
-//string restart() { // chưa test
-//    string command = "taskkill /F /FI \"STATUS eq RUNNING\"";
-//    int result1 = system(command.c_str());
-//
-//    command = "shutdown /r /t 0";
-//    int result2 = system(command.c_str());
-//
-//    json jsonResponse;
-//
-//    jsonResponse["title"] = "restart";
-//
-//    if (result1 == 0 && result2 == 0)
-//        jsonResponse["result"] = "Your computer will be restart";
-//    else
-//        jsonResponse["result"] = "Unable to restart the computer";
-//
-//    return jsonResponse.dump();
-//}
+    // Tắt máy tính 
+    command = "shutdown /s /t 0";
+    system(command.c_str());
+}
 
 // Delete file
 string deleteFile(string& filePath) {
@@ -1273,6 +1131,40 @@ map<int, string> createKeyMap() {
 }
 
 // Hàm thu thập và trả về tên các phím được nhấn
+//vector<string> collectKeyNamesToFile(int durationInSeconds) {
+//    map<int, string> keyMap = createKeyMap(); // Tạo bảng ánh xạ mã phím
+//    vector<string> keyNames;  // Lưu trữ tên các phím đã nhấn
+//    bool keyState[256] = { false }; // Trạng thái trước đó của các phím
+//
+//    auto startTime = GetTickCount64(); // Lấy thời gian bắt đầu (milliseconds)
+//    cout << "Started collecting keys (Duration: " << durationInSeconds << " seconds):" << endl;
+//
+//    while ((GetTickCount64() - startTime) / 1000 < durationInSeconds) {
+//        for (int key = 0; key < 256; ++key) { // Duyệt qua tất cả các mã phím
+//            bool isPressed = GetAsyncKeyState(key) & 0x8000; // Kiểm tra nếu phím được nhấn
+//
+//            // Kiểm tra trạng thái phím điều khiển
+//            if (key == VK_LBUTTON || key == VK_RBUTTON) continue;  // Bỏ qua phím chuột
+//
+//            if (isPressed && !keyState[key]) { // Nếu phím vừa được nhấn (chưa nhấn trước đó)
+//                keyState[key] = true; // Cập nhật trạng thái
+//
+//                if (keyMap.find(key) != keyMap.end()) { // Nếu mã phím có trong bảng ánh xạ
+//                    keyNames.push_back(keyMap[key]);
+//                    cout << "Key pressed: " << keyMap[key] << endl;  // "Phím được nhấn"
+//                }
+//            }
+//            else if (!isPressed) { // Nếu phím không còn nhấn
+//                keyState[key] = false; // Reset trạng thái
+//            }
+//        }
+//        Sleep(10); // Giảm tải CPU
+//    }
+//
+//    cout << "Finished collecting keys!" << endl;  // "Kết thúc thu thập phím!"
+//    return keyNames; // Trả về danh sách các phím đã nhấn
+//}
+
 vector<string> collectKeyNames(int durationInSeconds) {
     map<int, string> keyMap = createKeyMap(); // Tạo bảng ánh xạ mã phím
     vector<string> keyNames;  // Lưu trữ tên các phím đã nhấn
@@ -1303,9 +1195,23 @@ vector<string> collectKeyNames(int durationInSeconds) {
         Sleep(10); // Giảm tải CPU
     }
 
-    cout << "Finished collecting keys!" << endl;  // "Kết thúc thu thập phím!"
-    return keyNames; // Trả về danh sách các phím đã nhấn
+    //cout << "Finished collecting keys!" << endl;  // "Kết thúc thu thập phím!"
+
+    return keyNames;
+
 }
+
+void writeKeyNamesToFile(vector<string>& keyNames) {
+    ofstream output;
+    output.open("keyLogger.txt");
+
+    for (string& key : keyNames) {
+        output << key << " ";
+    }
+
+    output.close();
+}
+
 
 string keyLogger(int durationInSeconds) {
     json jsonResponse;
@@ -1314,13 +1220,12 @@ string keyLogger(int durationInSeconds) {
 
     vector<string> keyNames = collectKeyNames(durationInSeconds);
 
-    jsonResponse["content"] = keyNames;
-
     if (keyNames.size() == 0) {
         jsonResponse["result"] = "Failed to collect keys";
     }
     else {
         jsonResponse["result"] = "Key logger successfully";
+        writeKeyNamesToFile(keyNames);
     }
 
     return jsonResponse.dump();
@@ -1399,27 +1304,6 @@ bool listDrivesAndPrintTree() {
     return true;
 }
 
-//string createDiractoryTree() {
-//    int result = _setmode(_fileno(stdout), _O_U16TEXT);
-//    if (result == -1) {
-//        std::cerr << "Unable to switch output mode to Unicode. The program will continue with default settings.\n";
-//    }
-//
-//    json jsonResponse;
-//
-//    jsonResponse["title"] = "getDirectoryTree";
-//
-//    // Liệt kê các ổ đĩa và ghi cây thư mục vào tệp
-//    if (listDrivesAndPrintTree()) {
-//        jsonResponse["result"] = "Successfully created directory tree";
-//    }
-//    else {
-//        jsonResponse["result"] = "Failed to create directory tree";
-//    }
-//
-//    return jsonResponse.dump();
-//}
-
 string createDiractoryTree() {
     // Khai báo biến để lưu chế độ mặc định của stdout
     int defaultMode = _O_TEXT; // Đảm bảo biến được khởi tạo đúng giá trị mặc định
@@ -1450,8 +1334,6 @@ string createDiractoryTree() {
 }
 
 void processRequest(SOCKET& clientSocket, string jsonRequest) {
-    std::lock_guard<std::mutex> lock(resourceMutex);
-
     // Tạo đối tượng JSON từ chuỗi JSON
     json j = json::parse(jsonRequest);
 
@@ -1494,11 +1376,18 @@ void processRequest(SOCKET& clientSocket, string jsonRequest) {
             }
         }
         else if (j.at("title") == "restart") {
-            // jsonResponse = restart();
-            sendJSON(clientSocket, jsonResponse);
+            json jsonResponse_temp;
+            jsonResponse_temp["title"] = "restart";
+            jsonResponse_temp["result"] = "Your computer will be restart in few seconds";
+
+            sendJSON(clientSocket, jsonResponse_temp.dump());
+            restart();
         }
         else if (j.at("title") == "shutdown") {
-            //jsonResponse = shutdown();
+            json jsonResponse_temp;
+            jsonResponse_temp["title"] = "restart";
+            jsonResponse_temp["result"] = "Your computer has been successfully shutdown";
+
             sendJSON(clientSocket, jsonResponse);
         }
         else if (j.at("title") == "startWebcam") {
@@ -1564,6 +1453,7 @@ void processRequest(SOCKET& clientSocket, string jsonRequest) {
             int duration = stoi(t);
 
             jsonResponse = keyLogger(duration);
+            sendFile(clientSocket, "keyLogger.txt");
             sendJSON(clientSocket, jsonResponse);
         }
 

