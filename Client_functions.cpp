@@ -25,6 +25,62 @@ SOCKET initializeSocket() {
     return clientSocket;
 }
 
+sockaddr_in receiveBroadcast() {
+    SOCKET udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (udpSocket == INVALID_SOCKET) {
+        cout << "Failed to create UDP socket: " << WSAGetLastError() << endl;
+        exit(EXIT_FAILURE);
+    }
+    cout << "UDP socket created for receiving broadcast" << endl;
+
+    sockaddr_in clientAddr;
+    clientAddr.sin_family = AF_INET;
+    clientAddr.sin_port = htons(9909); // Cổng broadcast
+    clientAddr.sin_addr.s_addr = INADDR_ANY;
+
+    if (::bind(udpSocket, (sockaddr*)&clientAddr, sizeof(clientAddr)) < 0) {
+        cout << "Failed to bind UDP socket: " << WSAGetLastError() << endl;
+        closesocket(udpSocket);
+        exit(EXIT_FAILURE);
+    }
+
+    char buffer[1024];
+    sockaddr_in senderAddr;
+    int senderLen = sizeof(senderAddr);
+
+    cout << "Waiting for broadcast message..." << endl;
+    int recvBytes = recvfrom(udpSocket, buffer, sizeof(buffer) - 1, 0,
+        (sockaddr*)&senderAddr, &senderLen);
+    if (recvBytes < 0) {
+        cout << "Failed to receive broadcast: " << WSAGetLastError() << endl;
+        closesocket(udpSocket);
+        exit(EXIT_FAILURE);
+    }
+
+    buffer[recvBytes] = '\0';
+    cout << "Received broadcast message: " << buffer << endl;
+
+    // Phân tích gói tin để lấy IP và cổng
+    sockaddr_in server;
+    server.sin_family = AF_INET;
+
+    string message(buffer);
+    size_t ipPos = message.find("Server_IP=");
+    size_t portPos = message.find(";Port=");
+
+    if (ipPos != std::string::npos && portPos != std::string::npos) {
+        std::string serverIP = message.substr(ipPos + 10, portPos - (ipPos + 10));
+        int serverPort = std::stoi(message.substr(portPos + 6));
+        server.sin_addr.s_addr = inet_addr(serverIP.c_str());
+        server.sin_port = htons(serverPort);
+
+        cout << "Parsed server address: " << serverIP << ":" << serverPort << endl;
+    }
+
+    closesocket(udpSocket);
+    return server;
+}
+
 sockaddr_in initializeServerSocket() {
     sockaddr_in server;
 
@@ -47,7 +103,7 @@ void connectToServer(SOCKET clientSocket, sockaddr_in server) {
 }
 
 void closedConected(SOCKET clientSocket) {
-    // Close the connection to the server
+
     int closeResult = closesocket(clientSocket);
     if (closeResult == 0) {
         cout << "Socket closed successfully" << endl;
@@ -80,6 +136,8 @@ void receiveAndSend(SOCKET clientSocket) {
         getline(cin, title);
 
         if (title == "endProgram") {
+            sendBuffer = "endProgram";
+            send(clientSocket, sendBuffer.c_str(), sendBuffer.length(), 0);
             closedConected(clientSocket);
         }
 
@@ -107,9 +165,6 @@ void receiveAndSend(SOCKET clientSocket) {
 
         processResponse(title, clientSocket);
     }
-
-    closesocket(clientSocket);
-    WSACleanup();
 }
 
 string buildRequest(const string& title,const string& nameObject, const string& source, const string& destination) {
@@ -207,44 +262,8 @@ void saveBinaryToFile(const string& binaryData, const string& savePath) {
     outFile.write(binaryData.c_str(), binaryData.size());
     outFile.close();
 
-    cout << "Successfully saved image to " << savePath << endl;
+    cout << "Successfully saved file to " << savePath << endl;
 }
-
-
-string processListApps(json j) {
-    if (!j.contains("content")) {
-        cout << "Applications list is empty!" << endl;
-        return "";
-    }
-
-    vector<string> list = j.at("content");
-
-    cout << "List of appications: " << endl;
-    for (string app : list) {
-        cout << app << endl;
-    }
-
-    // Trả về kết quả xem server có thực hiện thành công hay không
-    return j.at("result");
-}
-
-string processListServices(json j) {
-    if (!j.contains("content")) {
-        cout << "Services list is empty!" << endl;
-        return "";
-    }
-
-    vector<string> list = j.at("content");
-
-    cout << "List of services: " << endl;
-    for (string app : list) {
-        cout << app << endl;
-    }
-
-    // Trả về kết quả xem server có thực hiện thành công hay không
-    return j.at("result");
-}
-
 
 void processResponse(string title, SOCKET& clientSocket) {
 
@@ -260,19 +279,25 @@ void processResponse(string title, SOCKET& clientSocket) {
     }
 
     else if (title == "listApps") {
+        string filePath = "D:\\test screenshot client\\testListApps.txt";
+        string binaryData = receiveFile(clientSocket);
+        saveBinaryToFile(binaryData, filePath);
+
         jsonResponse = receiveJSON(clientSocket);
         j = json::parse(jsonResponse);
-        result = processListApps(j);
 
-        cout << result << endl;
+        cout << j["result"] << endl;
     }
 
     else if (title == "listServices") {
+        string filePath = "D:\\test screenshot client\\testListServices.txt";
+        string binaryData = receiveFile(clientSocket);
+        saveBinaryToFile(binaryData, filePath);
+
         jsonResponse = receiveJSON(clientSocket);
         j = json::parse(jsonResponse);
-        result = processListServices(j);
 
-        cout << result << endl;
+        cout << j["result"] << endl;
     }
 
     else if (title == "startService") {
@@ -297,14 +322,24 @@ void processResponse(string title, SOCKET& clientSocket) {
     }
 
     else if (title == "restart") {
-        // process restart
+        jsonResponse = receiveJSON(clientSocket);
+        j = json::parse(jsonResponse);
+
+        cout << j["result"] << endl;
     }
 
     else if (title == "shutdown") {
-        // process shutdown
+        jsonResponse = receiveJSON(clientSocket);
+        j = json::parse(jsonResponse);
+
+        cout << j["result"] << endl;
     }
 
     else if (title == "startWebcam") {
+        string filePath = "D:\\test screenshot client\\testVideo.avi";
+        string binaryData = receiveFile(clientSocket);
+        saveBinaryToFile(binaryData, filePath);
+
         jsonResponse = receiveJSON(clientSocket);
         j = json::parse(jsonResponse);
 
@@ -319,7 +354,7 @@ void processResponse(string title, SOCKET& clientSocket) {
     }
 
     else if (title == "screenShot") {
-        string filePath = "D:\\test screenshot client\\picture_from_server.bmp";
+        string filePath = "D:\\test screenshot client\\picture_from_server.png";
         string binaryData = receiveFile(clientSocket);
         saveBinaryToFile(binaryData, filePath);
 
@@ -329,12 +364,13 @@ void processResponse(string title, SOCKET& clientSocket) {
     }
 
     else if (title == "sendFile") {
-        string filePath = "D:\\test screenshot client\\HackerToeic.pdf";
+        string filePath = "D:\\test screenshot client\\sendFile.pdf";
         string binaryData = receiveFile(clientSocket);
         saveBinaryToFile(binaryData, filePath);
 
         jsonResponse = receiveJSON(clientSocket);
         j = json::parse(jsonResponse);
+
         cout << j["result"] << endl;
     }
 
@@ -352,14 +388,12 @@ void processResponse(string title, SOCKET& clientSocket) {
     }
 
     else if (title == "keyLogger") {
+        string filePath = "D:\\test screenshot client\\keyLogger.txt";
+        string binaryData = receiveFile(clientSocket);
+        saveBinaryToFile(binaryData, filePath);
+
         jsonResponse = receiveJSON(clientSocket);
         j = json::parse(jsonResponse);
-
-        vector<string> keyNames = j["content"];
-
-        for (int i = 0; i < keyNames.size(); i++) {
-            cout << keyNames[i] << " ";
-        }
 
         cout << endl << j["result"] << endl;
     }
@@ -375,6 +409,15 @@ void processResponse(string title, SOCKET& clientSocket) {
         jsonResponse = receiveJSON(clientSocket);
         j = json::parse(jsonResponse);
 
+        cout << j["result"] << endl;
+    }
+    else if (title == "getDirectoryTree") {
+        string filePath = "D:\\test screenshot client\\DirectoryTree.txt";
+        string binaryData = receiveFile(clientSocket);
+        saveBinaryToFile(binaryData, filePath);
+
+        jsonResponse = receiveJSON(clientSocket);
+        j = json::parse(jsonResponse);
         cout << j["result"] << endl;
     }
     else {

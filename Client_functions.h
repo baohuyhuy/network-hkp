@@ -15,6 +15,8 @@ WSADATA initializeWinsock();
 
 SOCKET initializeSocket();
 
+sockaddr_in receiveBroadcast();
+
 sockaddr_in initializeServerSocket();
 
 void connectToServer(SOCKET clientSocket, sockaddr_in server);
