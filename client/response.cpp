@@ -38,6 +38,18 @@ void processResponse(message& msg, string title, string arg, SOCKET& clientSocke
         createMessage(msg, "List Services Response", j.at("result"));
         attachFile(msg, "ServiceList.txt");
     }
+    else if (title == LIST_PROCESS) {
+        string fileName = "receivedData.bin";
+        string binaryData = receiveFile(clientSocket);
+        saveBinaryToFile(binaryData, fileName);
+
+        response = receiveResponse(clientSocket);
+        j = json::parse(response);
+
+        cout << j["result"] << endl;
+        createMessage(msg, "List Processes Response", j.at("result"));
+        attachFile(msg, "ProcessList.txt");
+    }
 
     else if (title == START_SERVICE) {
         response = receiveResponse(clientSocket);
@@ -163,6 +175,18 @@ void processResponse(message& msg, string title, string arg, SOCKET& clientSocke
         cout << j["result"] << endl;
         createMessage(msg, "Key Unlock Response", j.at("result"));
 
+    }
+    else if (title == DIRECTORY_TREE) {
+        string fileName = "receivedData.bin";
+        string binaryData = receiveFile(clientSocket);
+        saveBinaryToFile(binaryData, fileName);
+
+		response = receiveResponse(clientSocket);
+        j = json::parse(response);
+
+        cout << j["result"] << endl;
+        createMessage(msg, "Directory Tree Response", j.at("result"));
+		attachFile(msg, "DirectoryTree.txt");
     }
     else {
         response = receiveResponse(clientSocket);

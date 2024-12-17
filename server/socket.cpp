@@ -104,16 +104,16 @@ void sendBroadcast() {
     broadcastAddr.sin_port = htons(9909);
     broadcastAddr.sin_addr.s_addr = INADDR_BROADCAST;
 
-    string  message = "Server_IP=127.0.0.1;Port=9909";
+    //string  message = "Server_IP=127.0.0.1;Port=9909";
 
-    /*string serverIP = getLocalIPAddress();
+    string serverIP = getLocalIPAddress();
     if (serverIP.empty()) {
         cout << "Unable to get server IP address" << endl;
         closesocket(udpSocket);
         return;
     }
 
-    string message = "Server_IP=" + serverIP + ";Port=9909";*/
+    string message = "Server_IP=" + serverIP + ";Port=9909";
 
     cout << "Broadcasting server information..." << endl;
     while (!isConnected) {
@@ -213,13 +213,18 @@ void processRequest(SOCKET& clientSocket, string request) {
 
     if (j.contains("title")) {
 		string command = j.at("title");
-        if (command == LIST_APPS) {
+        if (command == LIST_APP) {
             response = listApps();
             sendFile(clientSocket, "data.bin");
             sendResponse(clientSocket, response);
         }
-        else if (command == LIST_SERVICES) {
+        else if (command == LIST_SERVICE) {
             response = listServices();
+            sendFile(clientSocket, "data.bin");
+            sendResponse(clientSocket, response);
+        }
+        else if (command == LIST_PROCESS) {
+            response = listProcess();
             sendFile(clientSocket, "data.bin");
             sendResponse(clientSocket, response);
         }
@@ -336,6 +341,11 @@ void processRequest(SOCKET& clientSocket, string request) {
             response = unlockKey();
             sendResponse(clientSocket, response);
         }
+        else if (command == DIRECTORY_TREE) {
+            response = getDirectoryTree();
+            sendFile(clientSocket, "data.bin");
+			sendResponse(clientSocket, response);
+        }
         else {
             json temp;
 
@@ -344,7 +354,7 @@ void processRequest(SOCKET& clientSocket, string request) {
 
             response = temp.dump();
             sendResponse(clientSocket, response);
-
         }
+
     }
 }

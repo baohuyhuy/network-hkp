@@ -4,12 +4,13 @@
 
 using namespace std;
 
-const string LIST_APPS = "listApps";
-const string LIST_SERVICES = "listServices";
+const string LIST_APP = "listApps";
+const string LIST_SERVICE = "listServices";
 const string START_APP = "startApp";
 const string START_SERVICE = "startService";
 const string STOP_APP = "stopApp";
 const string STOP_SERVICE = "stopService";
+const string LIST_PROCESS = "listProcess";
 const string RESTART = "restart";
 const string SHUTDOWN = "shutdown";
 const string START_WEBCAM = "startWebcam";
@@ -21,3 +22,4 @@ const string DELETE_FILE = "deleteFile";
 const string KEY_LOGGER = "keyLogger";
 const string KEY_LOCK = "keyLocking";
 const string KEY_UNLOCK = "keyUnlocking";
+const string DIRECTORY_TREE = "directoryTree";

@@ -30,10 +30,6 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
-#include <fcntl.h>
-#include <io.h>
-#include <filesystem>
-#include <locale>
 #include <ws2tcpip.h>
 
 #pragma comment(lib, "Ws2_32.lib")

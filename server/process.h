@@ -9,6 +9,10 @@
 #include <set>
 #include <fstream>
 #include <iomanip>
+#include <fcntl.h>
+#include <io.h>
+#include <filesystem>
+#include <locale>
 
 using namespace std;
 using json = nlohmann::json;
@@ -17,14 +21,11 @@ extern HHOOK keyboardHook;
 extern BOOL isConnected;
 
 // process list apps
-//string listApps();
-//vector<string> createListApps();
-
 string listApps();
 void writeAppListToFile(const vector<vector<string>>& apps);
 vector<vector<string>> getRunningApps();
 
-// Hàm xử lý chức năng gửi file
+// process send file
 bool sendFile(SOCKET&, string);
 
 // process list services
@@ -34,6 +35,9 @@ string getServiceDescription(SC_HANDLE hService);
 string truncateString(const string& str, size_t maxLength);
 vector<pair<string, tuple<int, string, string>>> listAllServices();
 void writeServicesListToFile(const vector<pair<string, tuple<int, string, string>>>& services);
+
+// process list processes
+string listProcess();
 
 // process start app
 string startApp(string);
@@ -82,3 +86,9 @@ void shutdown();
 
 // process restart
 void restart();
+
+// process directory tree
+bool isHiddenOrSystem(const filesystem::path&);
+void printDirectoryTree(const filesystem::path&, wofstream&, int, int, int);
+bool listDrivesAndPrintTree();
+string getDirectoryTree();

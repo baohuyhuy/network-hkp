@@ -6,6 +6,7 @@ using namespace std;
 
 const string LIST_APPS = "listApps";
 const string LIST_SERVICES = "listServices";
+const string LIST_PROCESS = "listProcess";
 const string START_APP = "startApp";
 const string START_SERVICE = "startService";
 const string STOP_APP = "stopApp";
@@ -22,3 +23,4 @@ const string KEYLOGGER = "keyLogger";
 const string KEY_LOCK = "keyLocking";
 const string KEY_UNLOCK = "keyUnlocking";
 const string END_PROGRAM = "endProgram";
+const string DIRECTORY_TREE = "directoryTree";

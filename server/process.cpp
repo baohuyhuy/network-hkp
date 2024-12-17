@@ -388,6 +388,25 @@ string listServices() {
     return jsonResponse.dump();
 }
 
+// list processes
+string listProcess() {
+    json jsonRespone;
+
+    jsonRespone["title"] = "listProcess";
+
+    int result = system("tasklist > data.bin");
+
+    if (result == 0) {
+        jsonRespone["result"] = "Successfully listed process";
+
+    }
+    else {
+        jsonRespone["result"] = "Failed to list services";
+    }
+
+    return jsonRespone.dump();
+}
+
 // delete file
 string deleteFile(string& filePath) {
     json jsonResponse;
@@ -770,4 +789,104 @@ void restart() {
 	// restart computer
     command = "shutdown /r /t 0";
     system(command.c_str());
+}
+
+// directory tree
+// Hàm kiểm tra xem tệp/thư mục có ẩn hoặc là hệ thống không
+bool isHiddenOrSystem(const filesystem::path& path) {
+    DWORD attributes = GetFileAttributesW(path.wstring().c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES) return false;
+    return (attributes & FILE_ATTRIBUTE_HIDDEN) || (attributes & FILE_ATTRIBUTE_SYSTEM);
+}
+
+// Hàm in cây thư mục ra tệp
+void printDirectoryTree(const filesystem::path& path, wofstream& output, int indent = 0, int currentDepth = 0, int maxDepth = 3) {
+    if (currentDepth > maxDepth) return; // Dừng nếu vượt quá mức tối đa
+
+    try {
+        for (const auto& entry : filesystem::directory_iterator(path)) {
+            // Bỏ qua tệp/thư mục ẩn hoặc hệ thống
+            if (isHiddenOrSystem(entry.path())) continue;
+
+            // Chuẩn bị chuỗi đầu ra
+            wstring line = wstring(indent, L' ') + L"|-- " + entry.path().filename().wstring() + L"\n";
+
+            // Ghi vào tệp
+            output << line;
+
+            // Nếu là thư mục, tiếp tục đệ quy (nếu ở mức nhỏ hơn mức tối đa)
+            if (filesystem::is_directory(entry.path()) && currentDepth < maxDepth) {
+                printDirectoryTree(entry.path(), output, indent + 4, currentDepth + 1, maxDepth);
+            }
+        }
+    }
+    catch (const filesystem::filesystem_error& e) {
+        output << L"Error: " << e.what() << L"\n";
+    }
+}
+
+// Hàm liệt kê các ổ đĩa và in cây thư mục
+bool listDrivesAndPrintTree() {
+    // Cấu hình luồng ghi file với UTF-8
+    wofstream output("data.bin", ios::out);
+    output.imbue(locale("en_US.UTF-8"));
+
+    if (!output.is_open()) {
+        wcout << L"Error: Unable to open file DirectoryTree.txt for writing.\n";
+        return false;
+    }
+
+    DWORD drives = GetLogicalDrives();
+    if (drives == 0) {
+        output << L"Error: Unable to retrieve the list of drives.\n";
+        return false;
+    }
+
+    // Ghi tiêu đề vào tệp
+    output << L"This PC\n";
+
+    for (char drive = 'A'; drive <= 'Z'; ++drive) {
+        if (drives & (1 << (drive - 'A'))) {
+            // Tạo đường dẫn ổ đĩa
+            wstring drivePath = wstring(1, drive) + L":\\";
+
+            // Ghi vào tệp
+            output << L"|-- Drive " + drivePath + L"\n";
+
+            // In thư mục con cấp 2
+            printDirectoryTree(drivePath, output, 4, 1, 3);
+        }
+    }
+
+    output.close();
+    return true;
+}
+
+string getDirectoryTree() {
+    // Khai báo biến để lưu chế độ mặc định của stdout
+    int defaultMode = _O_TEXT; // Đảm bảo biến được khởi tạo đúng giá trị mặc định
+
+    // Lưu chế độ hiện tại của stdout
+    defaultMode = _setmode(_fileno(stdout), _O_U16TEXT);
+    if (defaultMode == -1) {
+        cout << "Unable to switch output mode to Unicode. The program will continue with default settings.\n";
+    }
+
+    json jsonResponse;
+    jsonResponse["title"] = "getDirectoryTree";
+
+    // Liệt kê các ổ đĩa và ghi cây thư mục vào tệp
+    if (listDrivesAndPrintTree()) {
+        jsonResponse["result"] = "Successfully created directory tree";
+    }
+    else {
+        jsonResponse["result"] = "Failed to create directory tree";
+    }
+
+    // Khôi phục chế độ ban đầu của stdout
+    if (_setmode(_fileno(stdout), defaultMode) == -1) {
+        cout << "Failed to restore default stdout mode.\n";
+    }
+
+    return jsonResponse.dump();
 }
