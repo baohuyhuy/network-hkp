@@ -22,9 +22,9 @@
 #include <filesystem>
 #include <locale>
 #include <ws2tcpip.h> // Để sử dụng inet_ntop
-//#include <opencv2/opencv.hpp>
+//#include <opencv4/opencv2/opencv.hpp>
 #include <chrono>
-//#include <opencv2/core/utils/logger.hpp>
+//#include <opencv4/opencv2/core/utils/logger.hpp>
 #include "json.hpp"
 
 #pragma comment(lib, "Ws2_32.lib")

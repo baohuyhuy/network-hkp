@@ -3,6 +3,8 @@
 
 HHOOK keyboardHook = nullptr;
 BOOL isConnected = false;
+atomic<bool> isRecording(false);
+thread webcamThread;
 
 WSADATA initializeWinsock() {
     WSADATA ws;
@@ -86,8 +88,6 @@ void sendBroadcast() {
     broadcastAddr.sin_port = htons(9909);
     broadcastAddr.sin_addr.s_addr = INADDR_BROADCAST;
 
-    //string  message = "Server_IP=127.0.0.1;Port=9909";
-
     string serverIP = getLocalIPAddress();
     if (serverIP.empty()) {
         cout << "Unable to get server IP address" << endl;
@@ -96,6 +96,8 @@ void sendBroadcast() {
     }
 
     string message = "Server_IP=" + serverIP + ";Port=9909";
+    
+    cout << message << endl;
 
     cout << "Broadcasting server information..." << endl;
     while (!isConnected) {
@@ -195,12 +197,12 @@ void handleServer() {
     // Cấu hình server socket
     sockaddr_in server = initializeServerSocket();
 
-    // Liên kết và bắt đầu lắng nghe
-    bindAndListen(nSocket, server);
-
     // Chạy broadcast trên luồng riêng
     thread broadcastThread(sendBroadcast);
     broadcastThread.detach();
+
+    // Liên kết và bắt đầu lắng nghe
+    bindAndListen(nSocket, server);
 
     // Chấp nhận kết nối từ client
     SOCKET clientSocket = acceptRequestFromClient(nSocket);
@@ -493,21 +495,154 @@ string startService(string name) {
 //    return jsonResponse.dump();
 //}
 
-string stopWebcam() {
-    string command = "powershell -Command \"Get-Process| Where-Object { $_.Name -eq 'WindowsCamera' } | Stop-Process\"";
-    int result = system(command.c_str());
+//string stopWebcam() {
+//    string command = "powershell -Command \"Get-Process| Where-Object { $_.Name -eq 'WindowsCamera' } | Stop-Process\"";
+//    int result = system(command.c_str());
+//
+//    json jsonResponse;
+//
+//    jsonResponse["title"] = "stopWebcam";
+//
+//    if (result == 0)
+//        jsonResponse["result"] = "Successfully stopped webcam";
+//    else
+//        jsonResponse["result"] = "Failed to stop webcam";
+//
+//    return jsonResponse.dump();
+//}
 
-    json jsonResponse;
+//bool createWebcamVideo(int duration) {
+//    cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_SILENT);
+//
+//    // Khởi tạo COM ở chế độ Multithreaded
+//    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+//    if (FAILED(hr)) {
+//        return false;
+//    }
+//
+//    // Mở camera
+//    cv::VideoCapture cap(0);
+//    if (!cap.isOpened()) {
+//        CoUninitialize();
+//        return false;
+//    }
+//
+//    // Lấy kích thước khung hình và các thông số
+//    int frame_width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
+//    int frame_height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+//    cv::Size frame_size(frame_width, frame_height);
+//    int fps = 30;
+//
+//    // Tạo VideoWriter với codec AVC1
+//    string output_file = "output.mp4";
+//    cv::VideoWriter video(output_file,
+//        cv::VideoWriter::fourcc('a', 'v', 'c', '1'),  // Codec AVC1
+//        fps, frame_size, true);
+//
+//    if (!video.isOpened()) {
+//        cap.release();
+//        CoUninitialize();
+//        return false;
+//    }
+//
+//    // Bắt đầu quay video
+//    cv::Mat frame;
+//    auto start_time = chrono::steady_clock::now();
+//    int elapsed_time = 0;
+//    bool is_recording = true;  // Biến để xác định trạng thái ghi video
+//
+//
+//    while (isRecording) {
+//        cap >> frame;
+//        if (frame.empty()) {
+//            break;
+//        }
+//
+//        // Nếu còn thời gian và đang quay, ghi video
+//        if (is_recording) {
+//            video.write(frame);  // Ghi khung hình vào file
+//        }
+//
+//        // Hiển thị video
+//        cv::imshow("Video Recording", frame);
+//
+//        // Kiểm tra thời gian quay
+//        auto current_time = chrono::steady_clock::now();
+//        elapsed_time = chrono::duration_cast<chrono::seconds>(current_time - start_time).count();
+//
+//        // Sau khi hết thời gian quay, dừng ghi nhưng vẫn tiếp tục nhận khung hình
+//        if (elapsed_time >= duration && is_recording) {
+//            is_recording = false;
+//            video.release();
+//        }
+//
+//        // Kiểm tra phím nhấn
+//        int key = cv::waitKey(1) & 0xFF;
+//
+//        // Kiểm tra nếu cửa sổ bị đóng
+//        if (cv::getWindowProperty("Video Recording", cv::WND_PROP_VISIBLE) < 1) {
+//            break;
+//        }
+//    }
+//
+//    // Dọn dẹp tài nguyên
+//    cap.release();
+//    cv::destroyAllWindows();
+//    CoUninitialize();
+//
+//    return true;
+//}
 
-    jsonResponse["title"] = "stopWebcam";
-
-    if (result == 0)
-        jsonResponse["result"] = "Successfully stopped webcam";
-    else
-        jsonResponse["result"] = "Failed to stop webcam";
-
-    return jsonResponse.dump();
-}
+//
+//string startWebcam(SOCKET clientSocket) {
+//    if (isRecording) {
+//        return R"({"title":"startWebcam","result":"Webcam is already recording"})";
+//    }
+//
+//    isRecording = true;
+//    webcamThread = thread([]() {
+//        bool result = createWebcamVideo(10); // Quay video trong 10 giây
+//        });
+//    // sendFile(clientSocket, "output.mp4");
+//    // bool result=createWebcamVideo(10);
+//    json jsonResponse;
+//
+//    jsonResponse["title"] = "startWebcam";
+//
+//    /*if (result)
+//        jsonResponse["result"] = "Successfully started webcam";
+//    else
+//        jsonResponse["result"] = "Failed to start webcam";*/
+//    jsonResponse["result"] = "Successfully started webcam";
+//
+//    return jsonResponse.dump();
+//}
+//
+//string stopWebcam(SOCKET clientSocket) {
+//    if (!isRecording) {
+//        return R"({"title":"stopWebcam","result":"Webcam is not recording"})";
+//    }
+//
+//    isRecording = false; // Yêu cầu dừng quay video
+//
+//    if (webcamThread.joinable()) {
+//        webcamThread.join(); // Chờ thread webcam hoàn thành
+//    }
+//    string command = "powershell -Command \"Get-Process| Where-Object { $_.Name -eq 'WindowsCamera' } | Stop-Process\"";
+//    int result = system(command.c_str());
+//
+//    sendFile(clientSocket, "output.mp4");
+//    json jsonResponse;
+//
+//    jsonResponse["title"] = "stopWebcam";
+//
+//    if (result == 0)
+//        jsonResponse["result"] = "Successfully stopped webcam";
+//    else
+//        jsonResponse["result"] = "Failed to stop webcam";
+//
+//    return jsonResponse.dump();
+//}
 
 string stopApp(string name) {
     string command = "taskkill /IM " + name + ".exe /F";
@@ -1107,7 +1242,7 @@ bool UnlockKeyboard() {
     }
     else {
         DWORD error = GetLastError();
-        std::cerr << "Failed to unlock the keyboard. Error code: " << error << std::endl;
+        cout << "Failed to unlock the keyboard. Error code: " << error << endl;
         return false;
     }
 }
@@ -1119,7 +1254,6 @@ string solveKeyUnlockingAndSend(bool& flag) {
 
     if (UnlockKeyboard()) {
         jsonResponse["result"] = "Successfully unlocked the keyboard";
-        flag = false;
     }
     else {
         jsonResponse["result"] = "Failed to unlock the keyboard";
@@ -1429,16 +1563,16 @@ void processRequest(SOCKET& clientSocket, string jsonRequest) {
 
             sendJSON(clientSocket, jsonResponse);
         }
-        else if (Request.at("title") == "startWebcam") {
-            int duration = 10;
-            //jsonResponse = startWebcam(clientSocket, duration);
+       /* else if (Request.at("title") == "startWebcam") {
+          
+            jsonResponse = startWebcam(clientSocket);
             sendJSON(clientSocket, jsonResponse);
         }
 
         else if (Request.at("title") == "stopWebcam") {
-            //jsonResponse = stopWebcam();
+            jsonResponse = stopWebcam(clientSocket);
             sendJSON(clientSocket, jsonResponse);
-        }
+        }*/
 
         else if (Request.at("title") == "screenShot") {
             string filePath = screenShot();

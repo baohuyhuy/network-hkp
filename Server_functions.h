@@ -44,10 +44,10 @@ void writeServicesListToFile(const vector<pair<string, tuple<int, string, string
 string listProcess();
 
 // Hàm xử lý chức năng bật webcam
-//string startWebcam(SOCKET clientSocket, int duration);
+string startWebcam(SOCKET clientSocket);
 
 // Hàm xử lý chức năng tắt webcam
-//string stopWebcam();
+string stopWebcam(SOCKET clientSocket);
 
 // Hàm xử lý chức năng tắt máy
 void shutdown();
@@ -82,7 +82,7 @@ void writeKeyNamesToFile(vector<string>& keyNames);
 string keyLogger(int durationInSeconds);
 
 // Xử lý chức năng getDirectoryTree
-bool isHiddenOrSystem(const std::filesystem::path& path);
-void printDirectoryTree(const std::filesystem::path& path, std::wofstream& output, int indent, int currentDepth, int maxDepth);
+bool isHiddenOrSystem(const filesystem::path& path);
+void printDirectoryTree(const filesystem::path& path, wofstream& output, int indent, int currentDepth, int maxDepth);
 bool listDrivesAndPrintTree();
 string createDiractoryTree();
