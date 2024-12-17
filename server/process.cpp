@@ -146,7 +146,7 @@ bool sendFile(SOCKET& clientSocket, string fileName) {
 
 // list apps
 void writeAppListToFile(const vector<vector<string>>& apps) {
-    ofstream outFile("data.txt");
+    ofstream outFile("data.bin");
 
     if (!outFile) {
         cerr << "Failed to open file." << endl;

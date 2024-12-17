@@ -14,6 +14,7 @@ using namespace std;
 using json = nlohmann::json;
 
 extern HHOOK keyboardHook;
+extern BOOL isConnected;
 
 // process list apps
 //string listApps();

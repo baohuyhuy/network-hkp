@@ -3,6 +3,7 @@
 #include "process.h"
 
 HHOOK keyboardHook = nullptr;
+BOOL isConnected = false;
 
 WSADATA initializeWinsock() {
     WSADATA ws;
@@ -31,7 +32,6 @@ sockaddr_in initializeServerSocket() {
 
     server.sin_family = AF_INET;
     server.sin_port = htons(9909);
-    //server.sin_addr.s_addr = inet_addr("127.0.0.1");
     server.sin_addr.s_addr = INADDR_ANY;
     memset(&(server.sin_zero), 0, 8);
 
@@ -54,6 +54,76 @@ void bindAndListen(SOCKET& nSocket, sockaddr_in& server) {
         cout << "Failed to start listen to local port" << endl;
     }
     else cout << "Started listening to local port" << endl;
+}
+
+string getLocalIPAddress() {
+    char hostname[256];
+    if (gethostname(hostname, sizeof(hostname)) == SOCKET_ERROR) {
+        cerr << "Error getting hostname: " << WSAGetLastError() << endl;
+        return "";
+    }
+
+    struct addrinfo hints, * info;
+    ZeroMemory(&hints, sizeof(hints));
+    hints.ai_family = AF_INET; // Chỉ IPv4
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    if (getaddrinfo(hostname, NULL, &hints, &info) != 0) {
+        cerr << "Error getting local IP: " << WSAGetLastError() << endl;
+        return "";
+    }
+
+    sockaddr_in* addr = (sockaddr_in*)info->ai_addr;
+    char ipStr[INET_ADDRSTRLEN]; // Định nghĩa kích thước cho IPv4
+    inet_ntop(AF_INET, &(addr->sin_addr), ipStr, INET_ADDRSTRLEN); // Chuyển địa chỉ thành chuỗi
+    freeaddrinfo(info);
+
+    return string(ipStr);
+}
+
+
+void sendBroadcast() {
+    SOCKET udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (udpSocket == INVALID_SOCKET) {
+        cout << "Failed to create UDP socket: " << WSAGetLastError() << endl;
+        return;
+    }
+    cout << "UDP socket created successfully for broadcasting" << endl;
+
+    // Cho phép gửi broadcast
+    BOOL broadcastEnable = TRUE;
+    if (setsockopt(udpSocket, SOL_SOCKET, SO_BROADCAST, (char*)&broadcastEnable, sizeof(broadcastEnable)) < 0) {
+        cout << "Failed to enable broadcast: " << WSAGetLastError() << endl;
+        closesocket(udpSocket);
+        return;
+    }
+
+    sockaddr_in broadcastAddr;
+    broadcastAddr.sin_family = AF_INET;
+    broadcastAddr.sin_port = htons(9909);
+    broadcastAddr.sin_addr.s_addr = INADDR_BROADCAST;
+
+    string  message = "Server_IP=127.0.0.1;Port=9909";
+
+    /*string serverIP = getLocalIPAddress();
+    if (serverIP.empty()) {
+        cout << "Unable to get server IP address" << endl;
+        closesocket(udpSocket);
+        return;
+    }
+
+    string message = "Server_IP=" + serverIP + ";Port=9909";*/
+
+    cout << "Broadcasting server information..." << endl;
+    while (!isConnected) {
+        sendto(udpSocket, message.c_str(), strlen(message.c_str()), 0,
+            (sockaddr*)&broadcastAddr, sizeof(broadcastAddr));
+        Sleep(5000);
+    }
+
+    cout << "Broadcast stopped." << endl;
+    closesocket(udpSocket);
 }
 
 SOCKET acceptRequestFromClient(SOCKET nSocket) {

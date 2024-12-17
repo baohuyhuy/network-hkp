@@ -1,7 +1,22 @@
 ﻿#pragma once
+//#include <iostream>
+//#include <vector>
+//#include <string>
+//#include <windows.h>
+//#include <cstdio> 
+//#include <cstdlib>
+//#include <sstream>
+//#include <set>
+//#include <map>
+//#include <ctime>
+//#include <thread>
+//#include <ws2tcpip.h> 
+
 #include <iostream>
 #include <vector>
 #include <string>
+#include <fstream>
+#include <winsock2.h>
 #include <windows.h>
 #include <cstdio> 
 #include <cstdlib>
@@ -10,6 +25,16 @@
 #include <map>
 #include <ctime>
 #include <thread>
+#include <queue>
+#include <functional>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
+#include <fcntl.h>
+#include <io.h>
+#include <filesystem>
+#include <locale>
+#include <ws2tcpip.h>
 
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -22,6 +47,8 @@ SOCKET initializeSocket();
 sockaddr_in initializeServerSocket();
 
 void bindAndListen(SOCKET& nSocket, sockaddr_in& server);
+
+void sendBroadcast();
 
 SOCKET acceptRequestFromClient(SOCKET nSocket);
 

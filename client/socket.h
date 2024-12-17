@@ -19,6 +19,7 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <thread>
 #include <nlohmann/json.hpp>
 
 #pragma comment(lib, "Ws2_32.lib")
@@ -34,6 +35,8 @@ WSADATA initializeWinsock();
 SOCKET initializeSocket();
 
 sockaddr_in initializeServerSocket();
+
+sockaddr_in receiveBroadcast();
 
 void connectToServer(SOCKET clientSocket, sockaddr_in server);
 

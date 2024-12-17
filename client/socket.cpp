@@ -51,6 +51,80 @@ sockaddr_in initializeServerSocket() {
     return server;
 }
 
+wchar_t* stringToWcharArray(string& str) {
+    size_t size = str.size() + 1;
+    wchar_t* wcharArray = new wchar_t[size];
+    mbstowcs_s(nullptr, wcharArray, size, str.c_str(), size - 1);
+    return wcharArray;
+}
+
+// Kết nối tự động 
+sockaddr_in receiveBroadcast() {
+    SOCKET udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (udpSocket == INVALID_SOCKET) {
+        cout << "Failed to create UDP socket: " << WSAGetLastError() << endl;
+        exit(EXIT_FAILURE);
+    }
+    cout << "UDP socket created for receiving broadcast" << endl;
+
+    sockaddr_in clientAddr;
+    clientAddr.sin_family = AF_INET;
+    clientAddr.sin_port = htons(9909);
+    clientAddr.sin_addr.s_addr = INADDR_ANY;
+
+    if (::bind(udpSocket, (sockaddr*)&clientAddr, sizeof(clientAddr)) < 0) {
+        cout << "Failed to bind UDP socket: " << WSAGetLastError() << endl;
+        closesocket(udpSocket);
+        exit(EXIT_FAILURE);
+    }
+
+    char buffer[1024];
+    sockaddr_in senderAddr;
+    int senderLen = sizeof(senderAddr);
+
+    cout << "Waiting for broadcast message..." << endl;
+    int recvBytes = recvfrom(udpSocket, buffer, sizeof(buffer) - 1, 0,
+        (sockaddr*)&senderAddr, &senderLen);
+    if (recvBytes < 0) {
+        cout << "Failed to receive broadcast: " << WSAGetLastError() << endl;
+        closesocket(udpSocket);
+        exit(EXIT_FAILURE);
+    }
+
+    buffer[recvBytes] = '\0';
+    cout << "Received broadcast message: " << buffer << endl;
+
+    // Phân tích gói tin để lấy IP và cổng
+    sockaddr_in server;
+    server.sin_family = AF_INET;
+
+    string message(buffer);
+    size_t ipPos = message.find("Server_IP=");
+    size_t portPos = message.find(";Port=");
+
+    if (ipPos != string::npos && portPos != string::npos) {
+        string serverIP = message.substr(ipPos + 10, portPos - (ipPos + 10));
+        int serverPort = std::stoi(message.substr(portPos + 6));
+        
+        //server.sin_addr.s_addr = inet_addr(serverIP.c_str());
+
+        wchar_t* serverIP2 = stringToWcharArray(serverIP);
+        if (InetPton(AF_INET, serverIP2, &server.sin_addr) != 1) {
+            cout << "Failed to convert server's IP address" << endl;
+            // Handle error appropriately
+            exit(EXIT_FAILURE);
+        }
+        delete serverIP2;
+
+        server.sin_port = htons(serverPort);
+
+        cout << "Parsed server address: " << serverIP << ":" << serverPort << endl;
+    }
+
+    closesocket(udpSocket);
+    return server;
+}
+
 void connectToServer(SOCKET clientSocket, sockaddr_in server) {
     int connectResult = connect(clientSocket, (sockaddr*)&server, sizeof(server));
 
