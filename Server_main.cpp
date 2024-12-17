@@ -1,17 +1,17 @@
-#include "Library.h"
+#include "Server_library.h"
 #include "Server_functions.h"
 
 using namespace std;
 
 int main() {
 
-	//WSADATA ws = initializeWinsock();
+	/*WSADATA ws = initializeWinsock();
 
-	//SOCKET nSocket = initializeSocket();
+	SOCKET nSocket = initializeSocket();
 
-	//sockaddr_in server = initializeServerSocket();
+	sockaddr_in server = initializeServerSocket();
 
-	//bindAndListen(nSocket, server);
+	bindAndListen(nSocket, server);*/
 
 	//SOCKET clientSocket = acceptRequestFromClient(nSocket);
 
@@ -19,9 +19,10 @@ int main() {
 
 	//closeConected(clientSocket, nSocket);
 
-	initializeThreadPool(MAX_THREADS);
-
 	handleServer();
+
+	/*string IP = getLocalIPAddress();
+	cout << IP;*/
 
 	return 0;
 }
