@@ -1,4 +1,5 @@
-﻿#include "Client_functions.h"
+﻿#include "Library.h"
+#include "Client_functions.h"
 
 WSADATA initializeWinsock() {
     WSADATA ws;
@@ -25,6 +26,7 @@ SOCKET initializeSocket() {
     return clientSocket;
 }
 
+// Kết nối tự động 
 sockaddr_in receiveBroadcast() {
     SOCKET udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (udpSocket == INVALID_SOCKET) {
@@ -35,7 +37,7 @@ sockaddr_in receiveBroadcast() {
 
     sockaddr_in clientAddr;
     clientAddr.sin_family = AF_INET;
-    clientAddr.sin_port = htons(9909); // Cổng broadcast
+    clientAddr.sin_port = htons(9909); 
     clientAddr.sin_addr.s_addr = INADDR_ANY;
 
     if (::bind(udpSocket, (sockaddr*)&clientAddr, sizeof(clientAddr)) < 0) {
@@ -81,6 +83,7 @@ sockaddr_in receiveBroadcast() {
     return server;
 }
 
+// Kết nối thủ công
 sockaddr_in initializeServerSocket() {
     sockaddr_in server;
 
@@ -364,12 +367,14 @@ void processResponse(string title, SOCKET& clientSocket) {
     }
 
     else if (title == "sendFile") {
-        string filePath = "D:\\test screenshot client\\sendFile.pdf";
         string binaryData = receiveFile(clientSocket);
-        saveBinaryToFile(binaryData, filePath);
-
         jsonResponse = receiveJSON(clientSocket);
+
         j = json::parse(jsonResponse);
+
+        string fileName = j["fileName"];
+
+        saveBinaryToFile(binaryData, fileName);
 
         cout << j["result"] << endl;
     }
