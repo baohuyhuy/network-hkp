@@ -19,5 +19,5 @@ const string SEND_FILE = "sendFile";
 const string COPY_FILE = "copyFile";
 const string DELETE_FILE = "deleteFile";
 const string KEY_LOGGER = "keyLogger";
-const string KEY_LOCKING = "keyLocking";
-const string KEY_UNLOCKING = "keyUnlocking";
+const string KEY_LOCK = "keyLocking";
+const string KEY_UNLOCK = "keyUnlocking";

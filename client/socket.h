@@ -19,11 +19,11 @@
 #include <iostream>
 #include <string>
 #include <fstream>
-#include "json.hpp"
+#include <nlohmann/json.hpp>
 
 #pragma comment(lib, "Ws2_32.lib")
 
-#define _WINSOCK_DEPRECATED_NO_WARNINGS
+//#define _WINSOCK_DEPRECATED_NO_WARNINGS
 
 using namespace std;
 using json = nlohmann::json;
@@ -59,6 +59,6 @@ void saveBinaryToFile(const string& binaryData, const string& savePath);
 string receiveFile(SOCKET& clientSocket);
 
 // Hàm xử lý chức năng nhận dữ liệu là file JSON 
-string receiveJSON(SOCKET& clientSocket);
+string receiveResponse(SOCKET& clientSocket);
 
 

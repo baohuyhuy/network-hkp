@@ -6,9 +6,12 @@ x64
 *.vcxproj.user
 
 client/client
-client/vcpkg_installed
 client/.env.h
 
 server/server
 
+receivedData.bin
 screenshot.png
+temp.txt
+data.bin
+vcpkg_installed
