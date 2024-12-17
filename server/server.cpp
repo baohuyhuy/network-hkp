@@ -1,9 +1,8 @@
-#include "lib.h"
+#include "socket.h"
 
 using namespace std;
 
 int main() {
-
 	WSADATA ws = initializeWinsock();
 
 	SOCKET nSocket = initializeSocket();

@@ -1,7 +1,6 @@
 ﻿#include "socket.h"
 
 int main() {
-
 	WSADATA ws = initializeWinsock();
 
 	SOCKET clientSocket = initializeSocket();

@@ -29,16 +29,25 @@ SOCKET initializeSocket() {
     return clientSocket;
 }
 
+wchar_t* wstringToWcharArray(const std::wstring& wstr) {
+    wchar_t* wcharArray = new wchar_t[wstr.size() + 1];
+    std::copy(wstr.begin(), wstr.end(), wcharArray);
+    wcharArray[wstr.size()] = L'\0'; // Null-terminate the array
+    return wcharArray;
+}
+
 sockaddr_in initializeServerSocket() {
     sockaddr_in server;
 
     server.sin_family = AF_INET;
     server.sin_port = htons(9909);
-    //server.sin_addr.s_addr = inet_addr("127.0.0.1");
-    if (InetPton(AF_INET, L"127.0.0.1", &server.sin_addr) != 1) {
-        cout << "Failed to convert IP address" << endl;
+	wchar_t* serverIP = wstringToWcharArray(SERVER_IP);
+    if (InetPton(AF_INET, serverIP, &server.sin_addr) != 1) {
+        cout << "Failed to convert server's IP address" << endl;
         // Handle error appropriately
+		exit(EXIT_FAILURE);
     }
+    delete serverIP;
     return server;
 }
 
@@ -47,10 +56,10 @@ void connectToServer(SOCKET clientSocket, sockaddr_in server) {
 
     if (connectResult < 0) {
         cout << "Failed to connect to server" << endl;
-        return;
+		exit(EXIT_FAILURE);
     }
-    else
-        cout << "Connected to server successfully" << endl;
+    cout << "Connected to server successfully" << endl;
+	cout << "Start receiving and sending data to server" << endl;
 }
 
 void closeConnection(SOCKET clientSocket) {
@@ -92,23 +101,36 @@ void receiveAndSend(SOCKET clientSocket) {
 		// receive command from email
         if (!receivedNewCommand(*imapConn, title, nameObject, source, destination)) continue;
 
-        cout << "Processing " << title << " " << nameObject << endl;
+        cout << "Processing " << title << " " << nameObject << " " 
+            << source << " " << destination << endl;
         cout << endl;
 
 		// check if user want to end program
         if (title == END_PROGRAM) {
             message msg;
-			createMsg(msg, "End Program Response", "Program is ended");
+			createMessage(msg, "End Program Response", "Program is ended");
 			sendMail(*smtpConn, msg);
             closeConnection(clientSocket);
 			break;
+        }
+
+        if (title == RESTART) {
+            message msg;
+            createMessage(msg, "Restart Response", "Your computer will be restart in few seconds");
+            sendMail(*smtpConn, msg);
+        }
+
+        if (title == SHUTDOWN) {
+			message msg;
+			createMessage(msg, "Shutdown Response", "Your computer has been shutdown successfully");
+			sendMail(*smtpConn, msg);
         }
 
 		// create request to send to server
         sendBuffer = createRequest(title, nameObject, source, destination);
 
 		// send the request to the server
-        int sendResult = send(clientSocket, sendBuffer.c_str(), sendBuffer.length(), 0);
+        int sendResult = send(clientSocket, sendBuffer.c_str(), (int) sendBuffer.length(), 0);
         if (sendResult == SOCKET_ERROR) {
             cout << "Failed to send data to server. Error: " << WSAGetLastError() << endl;
             break;
@@ -119,10 +141,8 @@ void receiveAndSend(SOCKET clientSocket) {
         msg.content_transfer_encoding(mailio::mime::content_transfer_encoding_t::BASE_64);
         processResponse(msg, title, nameObject, clientSocket);
         sendMail(*smtpConn, msg);
-        //processResponse(title, clientSocket);
         
         cout << endl;
-        //break;
     }
 
 	// close connection to imap server
@@ -147,7 +167,7 @@ string createRequest(const string& title,const string& nameObject, const string&
     return j.dump(); // Chuyển đổi đối tượng JSON thành chuỗi
 }
 
-string receiveJSON(SOCKET& clientSocket) {
+string receiveResponse(SOCKET& clientSocket) {
     // Nhận kích thước chuỗi JSON
     int jsonSize;
     int result = recv(clientSocket, reinterpret_cast<char*>(&jsonSize), sizeof(jsonSize), 0);
@@ -228,42 +248,4 @@ void saveBinaryToFile(const string& binaryData, const string& savePath) {
     outFile.close();
 
     cout << "Successfully saved image to " << savePath << endl;
-}
-
-
-string processListApps(json j) {
-    string result = "";
-    if (!j.contains("content")) {
-        result = "Applications list is empty!\n";
-        return result;
-    }
-
-    vector<string> list = j.at("content");
-
-    result = "List of appications: \n";
-    for (string app : list) {
-		result += app + "\n";
-    }
-
-    // Trả về kết quả xem server có thực hiện thành công hay không
-    return result + (string)j.at("result");
-}
-
-string processListServices(json j) {
-    string result = "";
-    if (!j.contains("content")) {
-        result = "Services list is empty!\n";
-        return result;
-    }
-
-    vector<string> list = j.at("content");
-
-    result = "List of services: \n";
-    for (string app : list) {
-        result += app + "\n";
-    }
-
-    // Trả về kết quả xem server có thực hiện thành công hay không
-    return result + (string)j.at("result");
-
 }

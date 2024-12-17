@@ -35,7 +35,7 @@ void sendMail(smtps&, message&);
 
 message& createMessage(string);
 
-void createMsg(message&, string, string);
+void createMessage(message&, string, string);
 
 string extractFileName(string);
 
