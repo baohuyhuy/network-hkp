@@ -1,6 +1,7 @@
 ﻿#include "socket.h"
 #include "mail.h"
 #include "commands.h"
+#include "response.h"
 
 
 WSADATA initializeWinsock() {
@@ -28,16 +29,99 @@ SOCKET initializeSocket() {
     return clientSocket;
 }
 
+wchar_t* wstringToWcharArray(const std::wstring& wstr) {
+    wchar_t* wcharArray = new wchar_t[wstr.size() + 1];
+    std::copy(wstr.begin(), wstr.end(), wcharArray);
+    wcharArray[wstr.size()] = L'\0'; // Null-terminate the array
+    return wcharArray;
+}
+
 sockaddr_in initializeServerSocket() {
     sockaddr_in server;
 
     server.sin_family = AF_INET;
     server.sin_port = htons(9909);
-    //server.sin_addr.s_addr = inet_addr("127.0.0.1");
-    if (InetPton(AF_INET, L"127.0.0.1", &server.sin_addr) != 1) {
-        cout << "Failed to convert IP address" << endl;
+	wchar_t* serverIP = wstringToWcharArray(SERVER_IP);
+    if (InetPton(AF_INET, serverIP, &server.sin_addr) != 1) {
+        cout << "Failed to convert server's IP address" << endl;
         // Handle error appropriately
+		exit(EXIT_FAILURE);
     }
+    delete serverIP;
+    return server;
+}
+
+wchar_t* stringToWcharArray(string& str) {
+    size_t size = str.size() + 1;
+    wchar_t* wcharArray = new wchar_t[size];
+    mbstowcs_s(nullptr, wcharArray, size, str.c_str(), size - 1);
+    return wcharArray;
+}
+
+// Kết nối tự động 
+sockaddr_in receiveBroadcast() {
+    SOCKET udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (udpSocket == INVALID_SOCKET) {
+        cout << "Failed to create UDP socket: " << WSAGetLastError() << endl;
+        exit(EXIT_FAILURE);
+    }
+    cout << "UDP socket created for receiving broadcast" << endl;
+
+    sockaddr_in clientAddr;
+    clientAddr.sin_family = AF_INET;
+    clientAddr.sin_port = htons(9909);
+    clientAddr.sin_addr.s_addr = INADDR_ANY;
+
+    if (::bind(udpSocket, (sockaddr*)&clientAddr, sizeof(clientAddr)) < 0) {
+        cout << "Failed to bind UDP socket: " << WSAGetLastError() << endl;
+        closesocket(udpSocket);
+        exit(EXIT_FAILURE);
+    }
+
+    char buffer[1024];
+    sockaddr_in senderAddr;
+    int senderLen = sizeof(senderAddr);
+
+    cout << "Waiting for broadcast message..." << endl;
+    int recvBytes = recvfrom(udpSocket, buffer, sizeof(buffer) - 1, 0,
+        (sockaddr*)&senderAddr, &senderLen);
+    if (recvBytes < 0) {
+        cout << "Failed to receive broadcast: " << WSAGetLastError() << endl;
+        closesocket(udpSocket);
+        exit(EXIT_FAILURE);
+    }
+
+    buffer[recvBytes] = '\0';
+    cout << "Received broadcast message: " << buffer << endl;
+
+    // Phân tích gói tin để lấy IP và cổng
+    sockaddr_in server;
+    server.sin_family = AF_INET;
+
+    string message(buffer);
+    size_t ipPos = message.find("Server_IP=");
+    size_t portPos = message.find(";Port=");
+
+    if (ipPos != string::npos && portPos != string::npos) {
+        string serverIP = message.substr(ipPos + 10, portPos - (ipPos + 10));
+        int serverPort = std::stoi(message.substr(portPos + 6));
+        
+        //server.sin_addr.s_addr = inet_addr(serverIP.c_str());
+
+        wchar_t* serverIP2 = stringToWcharArray(serverIP);
+        if (InetPton(AF_INET, serverIP2, &server.sin_addr) != 1) {
+            cout << "Failed to convert server's IP address" << endl;
+            // Handle error appropriately
+            exit(EXIT_FAILURE);
+        }
+        delete serverIP2;
+
+        server.sin_port = htons(serverPort);
+
+        cout << "Parsed server address: " << serverIP << ":" << serverPort << endl;
+    }
+
+    closesocket(udpSocket);
     return server;
 }
 
@@ -46,10 +130,10 @@ void connectToServer(SOCKET clientSocket, sockaddr_in server) {
 
     if (connectResult < 0) {
         cout << "Failed to connect to server" << endl;
-        return;
+		exit(EXIT_FAILURE);
     }
-    else
-        cout << "Connected to server successfully" << endl;
+    cout << "Connected to server successfully" << endl;
+	cout << "Start receiving and sending data to server" << endl;
 }
 
 void closeConnection(SOCKET clientSocket) {
@@ -77,7 +161,10 @@ void receiveAndSend(SOCKET clientSocket) {
     receiveBuffer.resize(1024);
     
 	// connect to imap server to receive command from email
-    imaps* conn = createIMAPConnection();
+    imaps* imapConn = createIMAPConnection();
+
+	// connect to smtp server to send response email
+	smtps* smtpConn = createSMTPConnection();
 
     while (true) {
         string title = "";
@@ -85,29 +172,59 @@ void receiveAndSend(SOCKET clientSocket) {
         string source = "";
         string destination = ""; // dùng riêng cho chức năng copy file
         
-        if (!receivedNewCommand(*conn, title, nameObject, source, destination)) continue;
+		// receive command from email
+        if (!receivedNewCommand(*imapConn, title, nameObject, source, destination)) continue;
 
-        cout << "Processing " << title << " " << nameObject << endl;
+        cout << "Processing " << title << " " << nameObject << " " 
+            << source << " " << destination << endl;
         cout << endl;
 
-        if (title == END_PROGRAM) {
-            closeConnection(clientSocket);
-        }
+		// create request to send to server
         sendBuffer = createRequest(title, nameObject, source, destination);
 
-        int sendResult = send(clientSocket, sendBuffer.c_str(), sendBuffer.length(), 0);
+		// send the request to the server
+        int sendResult = send(clientSocket, sendBuffer.c_str(), (int) sendBuffer.length(), 0);
         if (sendResult == SOCKET_ERROR) {
             cout << "Failed to send data to server. Error: " << WSAGetLastError() << endl;
             break;
         }
 
-        processResponse(title, clientSocket);
+		// check if user want to end program
+        if (title == END_PROGRAM) {
+            message msg;
+			createMessage(msg, "End Program Response", "Program is ended");
+			sendMail(*smtpConn, msg);
+			break;
+        }
+
+        if (title == RESTART) {
+            message msg;
+            createMessage(msg, "Restart Response", "Your computer will be restart in few seconds");
+            sendMail(*smtpConn, msg);
+            break;
+        }
+
+        if (title == SHUTDOWN) {
+			message msg;
+			createMessage(msg, "Shutdown Response", "Your computer has been shutdown successfully");
+			sendMail(*smtpConn, msg);
+            break;
+        }
+
+		// get response from server and send email to user
+        message msg;
+        msg.content_transfer_encoding(mailio::mime::content_transfer_encoding_t::BASE_64);
+        processResponse(msg, title, nameObject, clientSocket);
+        sendMail(*smtpConn, msg);
         
         cout << endl;
     }
 
 	// close connection to imap server
-    delete conn;
+    delete imapConn;
+
+	// close connection to smtp server
+	delete smtpConn;
 }
 
 string createRequest(const string& title,const string& nameObject, const string& source, const string& destination) {
@@ -125,7 +242,7 @@ string createRequest(const string& title,const string& nameObject, const string&
     return j.dump(); // Chuyển đổi đối tượng JSON thành chuỗi
 }
 
-string receiveJSON(SOCKET& clientSocket) {
+string receiveResponse(SOCKET& clientSocket) {
     // Nhận kích thước chuỗi JSON
     int jsonSize;
     int result = recv(clientSocket, reinterpret_cast<char*>(&jsonSize), sizeof(jsonSize), 0);
@@ -206,179 +323,4 @@ void saveBinaryToFile(const string& binaryData, const string& savePath) {
     outFile.close();
 
     cout << "Successfully saved image to " << savePath << endl;
-}
-
-
-string processListApps(json j) {
-    if (!j.contains("content")) {
-        cout << "Applications list is empty!" << endl;
-        return "";
-    }
-
-    vector<string> list = j.at("content");
-
-    cout << "List of appications: " << endl;
-    for (string app : list) {
-        cout << app << endl;
-    }
-
-    // Trả về kết quả xem server có thực hiện thành công hay không
-    return j.at("result");
-}
-
-string processListServices(json j) {
-    if (!j.contains("content")) {
-        cout << "Services list is empty!" << endl;
-        return "";
-    }
-
-    vector<string> list = j.at("content");
-
-    cout << "List of services: " << endl;
-    for (string app : list) {
-        cout << app << endl;
-    }
-
-    // Trả về kết quả xem server có thực hiện thành công hay không
-    return j.at("result");
-}
-
-
-void processResponse(string title, SOCKET& clientSocket) {
-
-    string result;
-    string jsonResponse;
-    json j;
-
-    if (title == "startApp") {
-        jsonResponse = receiveJSON(clientSocket);
-        j = json::parse(jsonResponse);
-
-        cout << j["result"] << endl;
-    }
-
-    else if (title == "listApps") {
-        jsonResponse = receiveJSON(clientSocket);
-        j = json::parse(jsonResponse);
-        result = processListApps(j);
-
-        cout << result << endl;
-    }
-
-    else if (title == "listServices") {
-        jsonResponse = receiveJSON(clientSocket);
-        j = json::parse(jsonResponse);
-        result = processListServices(j);
-
-        cout << result << endl;
-    }
-
-    else if (title == "startService") {
-        jsonResponse = receiveJSON(clientSocket);
-        j = json::parse(jsonResponse);
-
-        cout << j["result"] << endl;
-    }
-
-    else if (title == "stopApp") {
-        jsonResponse = receiveJSON(clientSocket);
-        j = json::parse(jsonResponse);
-
-        cout << j["result"] << endl;
-    }
-
-    else if (title == "stopService") {
-        jsonResponse = receiveJSON(clientSocket);
-        j = json::parse(jsonResponse);
-
-        cout << j["result"] << endl;
-    }
-
-    else if (title == "restart") {
-        // process restart
-    }
-
-    else if (title == "shutdown") {
-        // process shutdown
-    }
-
-    else if (title == "startWebcam") {
-        jsonResponse = receiveJSON(clientSocket);
-        j = json::parse(jsonResponse);
-
-        cout << j["result"] << endl;
-    }
-
-    else if (title == "stopWebcam") {
-        jsonResponse = receiveJSON(clientSocket);
-        j = json::parse(jsonResponse);
-
-        cout << j["result"] << endl;
-    }
-
-    else if (title == "screenShot") {
-        string filePath = "D:\\test screenshot client\\picture_from_server.bmp";
-        string binaryData = receiveFile(clientSocket);
-        saveBinaryToFile(binaryData, filePath);
-
-        jsonResponse = receiveJSON(clientSocket);
-        j = json::parse(jsonResponse);
-        cout << j["result"] << endl;
-    }
-
-    else if (title == "sendFile") {
-        string filePath = "D:\\test screenshot client\\HackerToeic.pdf";
-        string binaryData = receiveFile(clientSocket);
-        saveBinaryToFile(binaryData, filePath);
-
-        jsonResponse = receiveJSON(clientSocket);
-        j = json::parse(jsonResponse);
-        cout << j["result"] << endl;
-    }
-
-    else if (title == "copyFile") {
-        jsonResponse = receiveJSON(clientSocket);
-        j = json::parse(jsonResponse);
-        cout << j["result"] << endl;
-    }
-
-    else if (title == "deleteFile") {
-        jsonResponse = receiveJSON(clientSocket);
-        j = json::parse(jsonResponse);
-
-        cout << j["result"] << endl;
-    }
-
-    else if (title == "keyLogger") {
-        jsonResponse = receiveJSON(clientSocket);
-        j = json::parse(jsonResponse);
-
-        vector<string> keyNames = j["content"];
-
-        for (int i = 0; i < keyNames.size(); i++) {
-            cout << keyNames[i] << " ";
-        }
-
-        cout << endl << j["result"] << endl;
-    }
-
-    else if (title == "keyLocking") {
-        jsonResponse = receiveJSON(clientSocket);
-        j = json::parse(jsonResponse);
-
-        cout << j["result"] << endl;
-    }
-
-    else if (title == "keyUnlocking") {
-        jsonResponse = receiveJSON(clientSocket);
-        j = json::parse(jsonResponse);
-
-        cout << j["result"] << endl;
-    }
-    else {
-        jsonResponse = receiveJSON(clientSocket);
-        j = json::parse(jsonResponse);
-
-        cout << j["result"] << endl;
-    }
 }

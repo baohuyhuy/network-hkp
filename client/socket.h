@@ -19,11 +19,12 @@
 #include <iostream>
 #include <string>
 #include <fstream>
-#include "json.hpp"
+#include <thread>
+#include <nlohmann/json.hpp>
 
 #pragma comment(lib, "Ws2_32.lib")
 
-#define _WINSOCK_DEPRECATED_NO_WARNINGS
+//#define _WINSOCK_DEPRECATED_NO_WARNINGS
 
 using namespace std;
 using json = nlohmann::json;
@@ -35,6 +36,8 @@ SOCKET initializeSocket();
 
 sockaddr_in initializeServerSocket();
 
+sockaddr_in receiveBroadcast();
+
 void connectToServer(SOCKET clientSocket, sockaddr_in server);
 
 // Hàm đóng kết nối với server
@@ -45,9 +48,6 @@ string createRequest(const string& title, const string& nameObject, const string
 
 // Hàm nhận phản hồi và gửi thư qua cho server
 void receiveAndSend(SOCKET clientSocket);
-
-// Hàm xử lý phản hồi từ server
-void processResponse(string title, SOCKET& clientSocket);
 
 // Hàm xử lý chức năng list apps
 string processListApps(json j);
@@ -62,6 +62,6 @@ void saveBinaryToFile(const string& binaryData, const string& savePath);
 string receiveFile(SOCKET& clientSocket);
 
 // Hàm xử lý chức năng nhận dữ liệu là file JSON 
-string receiveJSON(SOCKET& clientSocket);
+string receiveResponse(SOCKET& clientSocket);
 
 

@@ -1,22 +1,25 @@
-#include "lib.h"
+﻿#include "socket.h"
 
 using namespace std;
 
 int main() {
+    WSADATA ws = initializeWinsock();
 
-	WSADATA ws = initializeWinsock();
+    SOCKET nSocket = initializeSocket();
 
-	SOCKET nSocket = initializeSocket();
+    sockaddr_in server = initializeServerSocket();
 
-	sockaddr_in server = initializeServerSocket();
+    bindAndListen(nSocket, server);
 
-	bindAndListen(nSocket, server);
+    // broadcast to find client
+    thread broadcastThread(sendBroadcast);
+    broadcastThread.detach();
 
-	SOCKET clientSocket = acceptRequestFromClient(nSocket);
+    SOCKET clientSocket = acceptRequestFromClient(nSocket);
 
-	processRequests(clientSocket, nSocket);
+    processRequests(clientSocket, nSocket);
 
-	closeConnection(clientSocket, nSocket);
+    closeConnection(clientSocket, nSocket);
 
 	return 0;
 }

@@ -4,9 +4,15 @@ x64
 *.vcxproj
 *.vcxproj.filters
 *.vcxproj.user
+vcpkg_installed
 
 client/client
-client/vcpkg_installed
 client/.env.h
+record.mp4
 
 server/server
+receivedData.bin
+screenshot.png
+temp.txt
+data.bin
+output.mp4

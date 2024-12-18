@@ -1,0 +1,11 @@
+{
+  "dependencies": [
+    "nlohmann-json",
+    {
+      "name": "opencv4",
+      "features": [
+        "ffmpeg"
+      ]
+    }
+  ]
+}
