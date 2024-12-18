@@ -215,13 +215,17 @@ void processRequest(SOCKET& clientSocket, string request) {
     json j = json::parse(request);
 
     string response = "";
+	json jsonResponse;
 
     if (j.contains("title")) {
 		string command = j.at("title");
         if (command == LIST_APP) {
-            response = listApps();
-            sendFile(clientSocket, "data.bin");
-            sendResponse(clientSocket, response);
+            jsonResponse = listApps();
+			sendResponse(clientSocket, jsonResponse.dump());
+			if (jsonResponse["status"] == "OK") {
+				sendFile(clientSocket, "data.bin");
+			}
+            //sendResponse(clientSocket, response);
         }
         else if (command == LIST_SERVICE) {
             response = listServices();

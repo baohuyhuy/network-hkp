@@ -28,7 +28,7 @@ extern atomic<bool> isRecording;
 extern thread webcamThread;
 
 // process list apps
-string listApps();
+json listApps();
 void writeAppListToFile(const vector<vector<string>>& apps);
 vector<vector<string>> getRunningApps();
 

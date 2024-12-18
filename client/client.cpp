@@ -9,7 +9,8 @@ int main() {
 
 	connectToServer(clientSocket, server);
 
-	receiveAndSend(clientSocket);
+	// read the requests from the email and send it to the server
+	processEmailRequests(clientSocket);
 
 	closeConnection(clientSocket);
 

@@ -14,10 +14,14 @@ string startApp(string name) {
     jsonResponse["title"] = START_APP;
     jsonResponse["nameObject"] = name;
 
-    if (result == 0)
+    if (result == 0) {
+		jsonResponse["status"] = "OK";
         jsonResponse["result"] = "Successfully started " + name;
-    else
+    }
+    else {
+		jsonResponse["status"] = "FAILED";
         jsonResponse["result"] = "Failed to start " + name;
+    }
 
     return jsonResponse.dump();
 }
@@ -209,7 +213,7 @@ vector<vector<string>> getRunningApps() {
     _pclose(pipe);
     return appList;
 }
-string listApps() {
+json listApps() {
     vector<vector<string>> appList = getRunningApps();
 
     json jsonResponse;
@@ -217,14 +221,16 @@ string listApps() {
     jsonResponse["title"] = "listApps";
 
     if (!appList.empty()) {
+		jsonResponse["status"] = "OK";
         jsonResponse["result"] = "Successfully listed applications";
         writeAppListToFile(appList);
     }
     else {
+		jsonResponse["status"] = "FAILED";
         jsonResponse["result"] = "Failed to list applications";
     }
 
-    return jsonResponse.dump();
+    return jsonResponse;
 }
 
 // list services

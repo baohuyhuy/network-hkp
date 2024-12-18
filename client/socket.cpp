@@ -36,21 +36,6 @@ wchar_t* wstringToWcharArray(const std::wstring& wstr) {
     return wcharArray;
 }
 
-sockaddr_in initializeServerSocket() {
-    sockaddr_in server;
-
-    server.sin_family = AF_INET;
-    server.sin_port = htons(9909);
-	wchar_t* serverIP = wstringToWcharArray(SERVER_IP);
-    if (InetPton(AF_INET, serverIP, &server.sin_addr) != 1) {
-        cout << "Failed to convert server's IP address" << endl;
-        // Handle error appropriately
-		exit(EXIT_FAILURE);
-    }
-    delete serverIP;
-    return server;
-}
-
 wchar_t* stringToWcharArray(string& str) {
     size_t size = str.size() + 1;
     wchar_t* wcharArray = new wchar_t[size];
@@ -58,7 +43,6 @@ wchar_t* stringToWcharArray(string& str) {
     return wcharArray;
 }
 
-// Kết nối tự động 
 sockaddr_in receiveBroadcast() {
     SOCKET udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (udpSocket == INVALID_SOCKET) {
@@ -94,7 +78,6 @@ sockaddr_in receiveBroadcast() {
     buffer[recvBytes] = '\0';
     cout << "Received broadcast message: " << buffer << endl;
 
-    // Phân tích gói tin để lấy IP và cổng
     sockaddr_in server;
     server.sin_family = AF_INET;
 
@@ -106,8 +89,6 @@ sockaddr_in receiveBroadcast() {
         string serverIP = message.substr(ipPos + 10, portPos - (ipPos + 10));
         int serverPort = std::stoi(message.substr(portPos + 6));
         
-        //server.sin_addr.s_addr = inet_addr(serverIP.c_str());
-
         wchar_t* serverIP2 = stringToWcharArray(serverIP);
         if (InetPton(AF_INET, serverIP2, &server.sin_addr) != 1) {
             cout << "Failed to convert server's IP address" << endl;
@@ -133,7 +114,7 @@ void connectToServer(SOCKET clientSocket, sockaddr_in server) {
 		exit(EXIT_FAILURE);
     }
     cout << "Connected to server successfully" << endl;
-	cout << "Start receiving and sending data to server" << endl;
+	cout << "Start receiving and sending data to server" << endl << endl;
 }
 
 void closeConnection(SOCKET clientSocket) {
@@ -156,7 +137,7 @@ void closeConnection(SOCKET clientSocket) {
     }
 }
 
-void receiveAndSend(SOCKET clientSocket) {
+void processEmailRequests(SOCKET clientSocket) {
     string sendBuffer, receiveBuffer;
     receiveBuffer.resize(1024);
     
@@ -177,7 +158,7 @@ void receiveAndSend(SOCKET clientSocket) {
 
         cout << "Processing " << title << " " << nameObject << " " 
             << source << " " << destination << endl;
-        cout << endl;
+        //cout << endl;
 
 		// create request to send to server
         sendBuffer = createRequest(title, nameObject, source, destination);
@@ -186,8 +167,12 @@ void receiveAndSend(SOCKET clientSocket) {
         int sendResult = send(clientSocket, sendBuffer.c_str(), (int) sendBuffer.length(), 0);
         if (sendResult == SOCKET_ERROR) {
             cout << "Failed to send data to server. Error: " << WSAGetLastError() << endl;
+            message msg;
+            createMessage(msg, "Response", "Failed to send data to server");
+            sendMail(*smtpConn, msg);
             break;
-        }
+        } 
+        cout << "Request sent to server successfully" << endl;
 
 		// check if user want to end program
         if (title == END_PROGRAM) {
@@ -216,8 +201,7 @@ void receiveAndSend(SOCKET clientSocket) {
         msg.content_transfer_encoding(mailio::mime::content_transfer_encoding_t::BASE_64);
         processResponse(msg, title, nameObject, clientSocket);
         sendMail(*smtpConn, msg);
-        
-        cout << endl;
+		cout << "Email response sent to user successfully" << endl << endl; // "Response sent to user successfully   
     }
 
 	// close connection to imap server
@@ -244,7 +228,7 @@ string createRequest(const string& title,const string& nameObject, const string&
 
 string receiveResponse(SOCKET& clientSocket) {
     // Nhận kích thước chuỗi JSON
-    int jsonSize;
+    int jsonSize = 0;
     int result = recv(clientSocket, reinterpret_cast<char*>(&jsonSize), sizeof(jsonSize), 0);
 
     if (result == SOCKET_ERROR) {
@@ -274,12 +258,12 @@ string receiveResponse(SOCKET& clientSocket) {
         bytesReceived += result;
     }
 
-    cout << "JSON received successfully!" << endl;
+    cout << "Receive response from server successfully" << endl;
     return jsonBuffer;
 }
 
 string receiveFile(SOCKET& clientSocket) {
-    int fileSize;
+    int fileSize = 0;
     int result = recv(clientSocket, reinterpret_cast<char*>(&fileSize), sizeof(fileSize), 0);
 
     if (result == SOCKET_ERROR || fileSize <= 0) {
@@ -306,7 +290,7 @@ string receiveFile(SOCKET& clientSocket) {
         bytesReceived += result;
     }
 
-    cout << "File received successfully!" << endl;
+    cout << "File received successfully" << endl;
     return binaryData;  // Trả về chuỗi dữ liệu nhị phân
 }
 
@@ -321,6 +305,4 @@ void saveBinaryToFile(const string& binaryData, const string& savePath) {
     // Ghi dữ liệu vào tệp
     outFile.write(binaryData.c_str(), binaryData.size());
     outFile.close();
-
-    cout << "Successfully saved image to " << savePath << endl;
 }

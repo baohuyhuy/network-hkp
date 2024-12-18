@@ -24,44 +24,33 @@
 
 #pragma comment(lib, "Ws2_32.lib")
 
-//#define _WINSOCK_DEPRECATED_NO_WARNINGS
-
 using namespace std;
 using json = nlohmann::json;
 
-// Các hàm môi trường socket để giao tiếp giữa client và server
+// Socket environment functions for communication between client and server
 WSADATA initializeWinsock();
 
 SOCKET initializeSocket();
-
-sockaddr_in initializeServerSocket();
 
 sockaddr_in receiveBroadcast();
 
 void connectToServer(SOCKET clientSocket, sockaddr_in server);
 
-// Hàm đóng kết nối với server
 void closeConnection(SOCKET clientSocket);
 
-// Xây dựng yêu cầu từ người dùng để gửi qua cho server
+// Build a request from the user to send to the server
 string createRequest(const string& title, const string& nameObject, const string& source, const string& destination);
 
-// Hàm nhận phản hồi và gửi thư qua cho server
-void receiveAndSend(SOCKET clientSocket);
+// Function to receive a response and send a message to the server
+void processEmailRequests(SOCKET clientSocket);
 
-// Hàm xử lý chức năng list apps
-string processListApps(json j);
-
-// Hàm xử lý chức năng list services
-string processListServices(json j);
-
-// Hàm lưu trữ dữ liệu nhị phân thành một file 
+// Function to save binary data to a file
 void saveBinaryToFile(const string& binaryData, const string& savePath);
 
-// Hàm xử lý chức năng nhận file 
+// Function to handle receiving a file
 string receiveFile(SOCKET& clientSocket);
 
-// Hàm xử lý chức năng nhận dữ liệu là file JSON 
+// Function to handle receiving data as a JSON file
 string receiveResponse(SOCKET& clientSocket);
 
 
