@@ -1,16 +1,4 @@
 ﻿#pragma once
-//#include <iostream>
-//#include <vector>
-//#include <string>
-//#include <windows.h>
-//#include <cstdio> 
-//#include <cstdlib>
-//#include <sstream>
-//#include <set>
-//#include <map>
-//#include <ctime>
-//#include <thread>
-//#include <ws2tcpip.h> 
 
 #include <iostream>
 #include <vector>
@@ -36,6 +24,7 @@
 
 using namespace std;
 
+// socket functions for connect and close connection between client and server
 WSADATA initializeWinsock();
 
 SOCKET initializeSocket();

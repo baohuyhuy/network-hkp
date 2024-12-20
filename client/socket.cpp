@@ -1,7 +1,7 @@
 ﻿#include "socket.h"
 #include "mail.h"
 #include "commands.h"
-#include "response.h"
+#include "process.h"
 
 
 WSADATA initializeWinsock() {
@@ -27,13 +27,6 @@ SOCKET initializeSocket() {
     }
 
     return clientSocket;
-}
-
-wchar_t* wstringToWcharArray(const std::wstring& wstr) {
-    wchar_t* wcharArray = new wchar_t[wstr.size() + 1];
-    std::copy(wstr.begin(), wstr.end(), wcharArray);
-    wcharArray[wstr.size()] = L'\0'; // Null-terminate the array
-    return wcharArray;
 }
 
 wchar_t* stringToWcharArray(string& str) {
@@ -92,7 +85,6 @@ sockaddr_in receiveBroadcast() {
         wchar_t* serverIP2 = stringToWcharArray(serverIP);
         if (InetPton(AF_INET, serverIP2, &server.sin_addr) != 1) {
             cout << "Failed to convert server's IP address" << endl;
-            // Handle error appropriately
             exit(EXIT_FAILURE);
         }
         delete serverIP2;
@@ -118,7 +110,7 @@ void connectToServer(SOCKET clientSocket, sockaddr_in server) {
 }
 
 void closeConnection(SOCKET clientSocket) {
-    // Close the connection to the server
+    // close the connection to the server
     int closeResult = closesocket(clientSocket);
     if (closeResult == 0) {
         cout << "Socket closed successfully" << endl;
@@ -127,7 +119,7 @@ void closeConnection(SOCKET clientSocket) {
         cout << "Failed to close socket: " << WSAGetLastError() << endl;
     }
 
-    // Cleanup Winsock
+    // cleanup Winsock
     int cleanupResult = WSACleanup();
     if (cleanupResult == 0) {
         cout << "Winsock cleaned up successfully" << endl;
@@ -135,174 +127,4 @@ void closeConnection(SOCKET clientSocket) {
     else {
         cout << "Failed to clean up Winsock: " << WSAGetLastError() << endl;
     }
-}
-
-void processEmailRequests(SOCKET clientSocket) {
-    string sendBuffer, receiveBuffer;
-    receiveBuffer.resize(1024);
-    
-	// connect to imap server to receive command from email
-    imaps* imapConn = createIMAPConnection();
-
-	// connect to smtp server to send response email
-	smtps* smtpConn = createSMTPConnection();
-
-    while (true) {
-        string title = "";
-        string nameObject = ""; // dùng chung cho mọi chức năng
-        string source = "";
-        string destination = ""; // dùng riêng cho chức năng copy file
-        
-		// receive command from email
-        if (!receivedNewCommand(*imapConn, title, nameObject, source, destination)) continue;
-
-        cout << "Processing " << title << " " << nameObject << " " 
-            << source << " " << destination << endl;
-        //cout << endl;
-
-		// create request to send to server
-        sendBuffer = createRequest(title, nameObject, source, destination);
-
-		// send the request to the server
-        int sendResult = send(clientSocket, sendBuffer.c_str(), (int) sendBuffer.length(), 0);
-        if (sendResult == SOCKET_ERROR) {
-            cout << "Failed to send data to server. Error: " << WSAGetLastError() << endl;
-            message msg;
-            createMessage(msg, "Response", "Failed to send data to server");
-            sendMail(*smtpConn, msg);
-            break;
-        } 
-        cout << "Request sent to server successfully" << endl;
-
-		// check if user want to end program
-        if (title == END_PROGRAM) {
-            message msg;
-			createMessage(msg, "End Program Response", "Program is ended");
-			sendMail(*smtpConn, msg);
-			break;
-        }
-
-        if (title == RESTART) {
-            message msg;
-            createMessage(msg, "Restart Response", "Your computer will be restart in few seconds");
-            sendMail(*smtpConn, msg);
-            break;
-        }
-
-        if (title == SHUTDOWN) {
-			message msg;
-			createMessage(msg, "Shutdown Response", "Your computer has been shutdown successfully");
-			sendMail(*smtpConn, msg);
-            break;
-        }
-
-		// get response from server and send email to user
-        message msg;
-        msg.content_transfer_encoding(mailio::mime::content_transfer_encoding_t::BASE_64);
-        processResponse(msg, title, nameObject, clientSocket);
-        sendMail(*smtpConn, msg);
-		cout << "Email response sent to user successfully" << endl << endl; // "Response sent to user successfully   
-    }
-
-	// close connection to imap server
-    delete imapConn;
-
-	// close connection to smtp server
-	delete smtpConn;
-}
-
-string createRequest(const string& title,const string& nameObject, const string& source, const string& destination) {
-    json j;
-
-    if(title != "") j["title"] = title;
-
-    if (j["title"] == "copyFile") {
-        j["source"] = source;
-        j["destination"] = destination;
-    }
-
-    else if(nameObject != "") j["nameObject"] = nameObject;
-
-    return j.dump(); // Chuyển đổi đối tượng JSON thành chuỗi
-}
-
-string receiveResponse(SOCKET& clientSocket) {
-    // Nhận kích thước chuỗi JSON
-    int jsonSize = 0;
-    int result = recv(clientSocket, reinterpret_cast<char*>(&jsonSize), sizeof(jsonSize), 0);
-
-    if (result == SOCKET_ERROR) {
-        cout << "Failed to receive JSON size, error: " << WSAGetLastError() << endl;
-        return "";
-    }
-
-    // Kiểm tra kích thước hợp lệ
-    if (jsonSize <= 0 || jsonSize > 10 * 1024 * 1024) { // Ví dụ giới hạn tối đa 10MB
-        cout << "Invalid JSON size received." << endl;
-        return "";
-    }
-
-    // Nhận chuỗi JSON
-    string jsonBuffer;
-    jsonBuffer.resize(jsonSize);
-
-    int bytesReceived = 0;
-    while (bytesReceived < jsonSize) {
-        int bytesToReceive = min(jsonSize - bytesReceived, 1024);
-        result = recv(clientSocket, &jsonBuffer[bytesReceived], bytesToReceive, 0);
-
-        if (result == SOCKET_ERROR) {
-            cout << "Failed to receive JSON data, error: " << WSAGetLastError() << endl;
-            return "";
-        }
-        bytesReceived += result;
-    }
-
-    cout << "Receive response from server successfully" << endl;
-    return jsonBuffer;
-}
-
-string receiveFile(SOCKET& clientSocket) {
-    int fileSize = 0;
-    int result = recv(clientSocket, reinterpret_cast<char*>(&fileSize), sizeof(fileSize), 0);
-
-    if (result == SOCKET_ERROR || fileSize <= 0) {
-        cout << "Failed to receive file size, error: " << WSAGetLastError() << endl;
-        return "";
-    }
-
-    cout << "Receiving file of size: " << fileSize << " bytes" << endl;
-
-    // Tạo một chuỗi để lưu dữ liệu nhị phân
-    string binaryData;
-    binaryData.resize(fileSize);
-
-    int bytesReceived = 0;
-    while (bytesReceived < fileSize) {
-        int bytesToReceive = min(fileSize - bytesReceived, 1024);
-        result = recv(clientSocket, &binaryData[bytesReceived], bytesToReceive, 0);
-
-        if (result == SOCKET_ERROR) {
-            cout << "Failed to receive file data, error: " << WSAGetLastError() << endl;
-            return "";
-        }
-
-        bytesReceived += result;
-    }
-
-    cout << "File received successfully" << endl;
-    return binaryData;  // Trả về chuỗi dữ liệu nhị phân
-}
-
-void saveBinaryToFile(const string& binaryData, const string& savePath) {
-    // Mở tệp nhị phân để ghi dữ liệu vào tệp hình ảnh
-    ofstream outFile(savePath, ios::out | ios::binary);
-    if (!outFile) {
-        cerr << "Failed to open file!" << endl;
-        return;
-    }
-
-    // Ghi dữ liệu vào tệp
-    outFile.write(binaryData.c_str(), binaryData.size());
-    outFile.close();
 }

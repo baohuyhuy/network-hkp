@@ -27,7 +27,7 @@
 using namespace std;
 using json = nlohmann::json;
 
-// Socket environment functions for communication between client and server
+// socket functions for connect and close connection between client and server
 WSADATA initializeWinsock();
 
 SOCKET initializeSocket();
@@ -37,20 +37,4 @@ sockaddr_in receiveBroadcast();
 void connectToServer(SOCKET clientSocket, sockaddr_in server);
 
 void closeConnection(SOCKET clientSocket);
-
-// Build a request from the user to send to the server
-string createRequest(const string& title, const string& nameObject, const string& source, const string& destination);
-
-// Function to receive a response and send a message to the server
-void processEmailRequests(SOCKET clientSocket);
-
-// Function to save binary data to a file
-void saveBinaryToFile(const string& binaryData, const string& savePath);
-
-// Function to handle receiving a file
-string receiveFile(SOCKET& clientSocket);
-
-// Function to handle receiving data as a JSON file
-string receiveResponse(SOCKET& clientSocket);
-
 
