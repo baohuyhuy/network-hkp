@@ -17,7 +17,7 @@ string createRequest(const string&, const string&, const string&, const string&)
 void processEmailRequests(SOCKET&);
 
 // handle receiving a file from server
-void receiveFileFromServer(SOCKET& , string);
+bool receiveFileFromServer(SOCKET& , string);
 
 // handle receiving response message from server
 string receiveResponseFromServer(SOCKET&);

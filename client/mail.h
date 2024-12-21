@@ -22,7 +22,7 @@ using mailio::string_t;
 // receive mail
 imaps* createIMAPConnection();
 
-bool receivedNewCommand(imaps&, string&, string&, string&, string&);
+string receivedNewCommand(imaps&, string&, string&, string&, string&);
 
 bool getNewMail(imaps&, message&);
 

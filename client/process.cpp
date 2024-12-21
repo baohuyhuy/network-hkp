@@ -18,12 +18,17 @@ void processEmailRequests(SOCKET& clientSocket) {
         string destination = "";
 
         // receive command from email
-        if (!receivedNewCommand(*imapConn, title, nameObject, source, destination)) continue;
-
-        cout << "Processing " << title <<
-            //" " << nameObject << " " <<
-            //source << " " << destination << 
-            endl;
+		string newCommandResult = receivedNewCommand(*imapConn, title, nameObject, source, destination);
+		if (newCommandResult == "NO") continue;
+		cout << "Received new command: " << title << endl;
+		if (newCommandResult == "ERROR") {
+			cout << "Invalid command format" << endl;
+			message msg;
+			createMessage(msg, "Error Response", "Invalid command format");
+			sendMail(*smtpConn, msg);
+            cout << "Email response sent to user successfully" << endl << endl;
+			continue;
+		}
 
         // create request to send to server
         sendBuffer = createRequest(title, nameObject, source, destination);
@@ -39,33 +44,14 @@ void processEmailRequests(SOCKET& clientSocket) {
         }
         cout << "Request sent to server successfully" << endl;
 
-        // check if user want to end program
-        if (title == END_PROGRAM) {
-            message msg;
-            createMessage(msg, "End Program Response", "Program is ended");
-            sendMail(*smtpConn, msg);
-            break;
-        }
-
-        if (title == RESTART) {
-            message msg;
-            createMessage(msg, "Restart Response", "Your computer will be restart in few seconds");
-            sendMail(*smtpConn, msg);
-            break;
-        }
-
-        if (title == SHUTDOWN) {
-            message msg;
-            createMessage(msg, "Shutdown Response", "Your computer has been shutdown successfully");
-            sendMail(*smtpConn, msg);
-            break;
-        }
-
-        // get response from server and send email to user
         message msg;
         msg.content_transfer_encoding(mailio::mime::content_transfer_encoding_t::BASE_64);
+        // get response from server and send email to user
         createReponseToUser(msg, title, nameObject, clientSocket);
         sendMail(*smtpConn, msg);
+        
+		if (title == RESTART || title == SHUTDOWN || title == DISCONNECT) break;
+
         cout << "Email response sent to user successfully" << endl << endl;
     }
 
@@ -127,13 +113,13 @@ string receiveResponseFromServer(SOCKET& clientSocket) {
     return jsonBuffer;
 }
 
-void receiveFileFromServer(SOCKET& clientSocket, string fileName) {
+bool receiveFileFromServer(SOCKET& clientSocket, string fileName) {
     int fileSize = 0;
     int result = recv(clientSocket, reinterpret_cast<char*>(&fileSize), sizeof(fileSize), 0);
 
     if (result == SOCKET_ERROR || fileSize <= 0) {
         cout << "Failed to receive file size, error: " << WSAGetLastError() << endl;
-        return;
+        return false;
     }
 
     cout << "Receiving file of size: " << fileSize << " bytes" << endl;
@@ -148,7 +134,7 @@ void receiveFileFromServer(SOCKET& clientSocket, string fileName) {
 
         if (result == SOCKET_ERROR) {
             cout << "Failed to receive file data, error: " << WSAGetLastError() << endl;
-            return;
+            return false;
         }
 
         bytesReceived += result;
@@ -159,6 +145,8 @@ void receiveFileFromServer(SOCKET& clientSocket, string fileName) {
     ofstream outFile(fileName, ios::binary);
     outFile.write(binaryData.c_str(), binaryData.size());
     outFile.close();
+
+	return true;
 }
 
 void createReponseToUser(message& msg, string title, string arg, SOCKET& clientSocket) {
@@ -208,7 +196,10 @@ void createReponseToUser(message& msg, string title, string arg, SOCKET& clientS
         j = json::parse(response);
 
         cout << "Message from server: " << j["result"] << endl;
-        createMessage(msg, "Start Service Response", j.at("result"));
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+        createMessage(msg, "Start Service Response", body);
     }
 
     else if (title == STOP_SERVICE) {
@@ -216,46 +207,69 @@ void createReponseToUser(message& msg, string title, string arg, SOCKET& clientS
         j = json::parse(response);
 
         cout << "Message from server: " << j["result"] << endl;
-        createMessage(msg, "Stop Service Response", j.at("result"));
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+        createMessage(msg, "Stop Service Response", body);
     }
 
     else if (title == LIST_SERVICE) {
-        receiveFileFromServer(clientSocket, DATA_FILE);
-
         response = receiveResponseFromServer(clientSocket);
         j = json::parse(response);
 
         cout << "Message from server: " << j["result"] << endl;
-        createMessage(msg, "List Services Response", j.at("result"));
-        attachFile(msg, "ServiceList.txt");
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+        createMessage(msg, "List Service Response", body);
+
+        if (j["status"] == "OK") {
+            receiveFileFromServer(clientSocket, DATA_FILE);
+            attachFile(msg, "ServiceList.txt");
+        }
     }
 
     else if (title == LIST_PROCESS) {
-        receiveFileFromServer(clientSocket, DATA_FILE);
-
         response = receiveResponseFromServer(clientSocket);
         j = json::parse(response);
 
         cout << "Message from server: " << j["result"] << endl;
-        createMessage(msg, "List Processes Response", j.at("result"));
-        attachFile(msg, "ProcessList.txt");
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+        createMessage(msg, "List Process Response", body);
+
+        if (j["status"] == "OK") {
+            receiveFileFromServer(clientSocket, DATA_FILE);
+            attachFile(msg, "ProcessList.txt");
+        }
     }
 
     else if (title == GET_FILE) {
-        receiveFileFromServer(clientSocket, DATA_FILE);
-
         response = receiveResponseFromServer(clientSocket);
         j = json::parse(response);
+
         cout << "Message from server: " << j["result"] << endl;
-        createMessage(msg, "Get File Response", j.at("result"));
-        attachFile(msg, extractFileName(arg));
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+        createMessage(msg, "Get File Response", body);
+
+        if (j["status"] == "OK") {
+            receiveFileFromServer(clientSocket, DATA_FILE);
+            attachFile(msg, extractFileName(arg));
+        }
     }
 
     else if (title == COPY_FILE) {
         response = receiveResponseFromServer(clientSocket);
         j = json::parse(response);
+
         cout << "Message from server: " << j["result"] << endl;
-        createMessage(msg, "Copy File Response", j.at("result"));
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+		createMessage(msg, "Copy File Response", body);
     }
 
     else if (title == DELETE_FILE) {
@@ -263,29 +277,42 @@ void createReponseToUser(message& msg, string title, string arg, SOCKET& clientS
         j = json::parse(response);
 
         cout << "Message from server: " << j["result"] << endl;
-        createMessage(msg, "Delete File Response", j.at("result"));
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+        createMessage(msg, "Delete File Response", body);
     }
 
     else if (title == TAKE_SCREENSHOT) {
-        receiveFileFromServer(clientSocket, DATA_FILE);
-
         response = receiveResponseFromServer(clientSocket);
         j = json::parse(response);
-        
+
         cout << "Message from server: " << j["result"] << endl;
-        createMessage(msg, "Screen Shot Response", j.at("result"));
-        attachFile(msg, "screenshot.png");
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+        createMessage(msg, "Screen Shot Response", body);
+
+        if (j["status"] == "OK") {
+            receiveFileFromServer(clientSocket, DATA_FILE);
+            attachFile(msg, "screenshot.png");
+        }
     }
 
     else if (title == KEYLOGGER) {
-        receiveFileFromServer(clientSocket, DATA_FILE);
-
         response = receiveResponseFromServer(clientSocket);
         j = json::parse(response);
 
         cout << "Message from server: " << j["result"] << endl;
-        createMessage(msg, "Keylogger Response", j.at("result"));
-		attachFile(msg, "Keylogger.txt");
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+        createMessage(msg, "Keylogger Response", body);
+
+        if (j["status"] == "OK") {
+            receiveFileFromServer(clientSocket, DATA_FILE);
+            attachFile(msg, "Keylogger.txt");
+        }
     }
 
     else if (title == LOCK_KEYBOARD) {
@@ -293,7 +320,10 @@ void createReponseToUser(message& msg, string title, string arg, SOCKET& clientS
         j = json::parse(response);
 
         cout << "Message from server: " << j["result"] << endl;
-        createMessage(msg, "Key Lock Response", j.at("result"));
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+        createMessage(msg, "Lock Keyboard Response", body);
     }
 
     else if (title == UNLOCK_KEYBOARD) {
@@ -301,18 +331,52 @@ void createReponseToUser(message& msg, string title, string arg, SOCKET& clientS
         j = json::parse(response);
 
         cout << "Message from server: " << j["result"] << endl;
-        createMessage(msg, "Key Unlock Response", j.at("result"));
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+        createMessage(msg, "Unlock Keyboard Response", body);
+    }
+
+    else if (title == RESTART) {
+        json j;
+        j["status"] = "OK";
+        j["result"] = "Successfully disconnect from server";
+
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+
+        message msg;
+        createMessage(msg, "Restart Response", body);
+    }
+
+    else if (title == SHUTDOWN) {
+        json j;
+        j["status"] = "OK";
+        j["result"] = "Successfully disconnect from server";
+
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+
+        message msg;
+        createMessage(msg, "Shutdown Response", body);
     }
 
     else if (title == LIST_DIRECTORY_TREE) {
-        receiveFileFromServer(clientSocket, DATA_FILE);
-
-		response = receiveResponseFromServer(clientSocket);
+        response = receiveResponseFromServer(clientSocket);
         j = json::parse(response);
 
         cout << "Message from server: " << j["result"] << endl;
-        createMessage(msg, "Directory Tree Response", j.at("result"));
-		attachFile(msg, "DirectoryTree.txt");
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+        createMessage(msg, "List Directory Tree Response", body);
+
+        if (j["status"] == "OK") {
+            receiveFileFromServer(clientSocket, DATA_FILE);
+            attachFile(msg, "DirectoryTree.txt");
+        }
     }
 
     else if (title == TURN_ON_WEBCAM) {
@@ -320,25 +384,47 @@ void createReponseToUser(message& msg, string title, string arg, SOCKET& clientS
         j = json::parse(response);
 
         cout << "Message from server: " << j["result"] << endl;
-        createMessage(msg, "Start Webcam Response", j.at("result"));
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+        createMessage(msg, "Turn On Webcam Response", body);
     }
 
     else if (title == TURN_OFF_WEBCAM) {
-        receiveFileFromServer(clientSocket, VIDEO_FILE);
-
         response = receiveResponseFromServer(clientSocket);
         j = json::parse(response);
 
         cout << "Message from server: " << j["result"] << endl;
-        createMessage(msg, "Stop Webcam Response", j.at("result"));
-        attachVideo(msg, "record.mp4");
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+        createMessage(msg, "Turn Off Webcam Response", body);
+
+        if (j["status"] == "OK") {
+            receiveFileFromServer(clientSocket, VIDEO_FILE);
+            attachVideo(msg, VIDEO_FILE);
+        }
     }
 
-    else {
-        response = receiveResponseFromServer(clientSocket);
-        j = json::parse(response);
+    else if (title == DISCONNECT) {
+        json j;
+        j["status"] = "OK";
+        j["result"] = "Successfully disconnect from server";
 
-        cout << "Message from server: " << j["result"] << endl;
-        createMessage(msg, "Socket Response", j.at("result"));
+        string body =
+            "Status: " + ((string)j["status"]) + "\n"
+            "Message: " + (string)j["result"];
+
+        createMessage(msg, "Disconnect Response", body);
     }
+
+
+
+    //else {
+    //    response = receiveResponseFromServer(clientSocket);
+    //    j = json::parse(response);
+
+    //    cout << "Message from server: " << j["result"] << endl;
+    //    createMessage(msg, "Socket Response", j.at("result"));
+    //}
 }
