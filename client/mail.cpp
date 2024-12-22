@@ -73,6 +73,13 @@ string getMessageTextBody(message& msg) {
 	return body;
 }
 
+bool authenticateUser(message& msg) {
+	auto from = msg.from();
+	if (from.empty()) return false;
+	return from.addresses[0].address == USER_MAIL_ADDRESS;
+}
+
+
 string receivedNewCommand(imaps& conn, string& title, string& nameObject, string& source, string& destination) {
     // mail message to store the fetched one
     message msg;
@@ -84,6 +91,7 @@ string receivedNewCommand(imaps& conn, string& title, string& nameObject, string
     if (!getNewMail(conn, msg)) return "NO";
 
     // TODO: authenticate the sender
+    if (!authenticateUser(msg)) return "NO";
 
     // get the message subject
     title = msg.subject();
