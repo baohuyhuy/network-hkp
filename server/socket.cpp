@@ -48,7 +48,7 @@ void bindAndListen(SOCKET& nSocket, sockaddr_in& server) {
     }
     else cout << "Successfully bind to local port" << endl;
 
-    // Listen the request from client 
+    // listen the request from client 
     nRet = listen(nSocket, 5);
     if (nRet < 0) {
         cout << "Failed to start listen to local port" << endl;
@@ -65,7 +65,7 @@ string getLocalIPAddress() {
 
     struct addrinfo hints, * info;
     ZeroMemory(&hints, sizeof(hints));
-    hints.ai_family = AF_INET; // Chỉ IPv4
+    hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
 
@@ -75,8 +75,8 @@ string getLocalIPAddress() {
     }
 
     sockaddr_in* addr = (sockaddr_in*)info->ai_addr;
-    char ipStr[INET_ADDRSTRLEN]; // Định nghĩa kích thước cho IPv4
-    inet_ntop(AF_INET, &(addr->sin_addr), ipStr, INET_ADDRSTRLEN); // Chuyển địa chỉ thành chuỗi
+    char ipStr[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(addr->sin_addr), ipStr, INET_ADDRSTRLEN);
     freeaddrinfo(info);
 
     return string(ipStr);
@@ -91,7 +91,7 @@ void sendBroadcast() {
     }
     cout << "UDP socket created successfully for broadcasting" << endl;
 
-    // Cho phép gửi broadcast
+    // enable broadcast
     BOOL broadcastEnable = TRUE;
     if (setsockopt(udpSocket, SOL_SOCKET, SO_BROADCAST, (char*)&broadcastEnable, sizeof(broadcastEnable)) < 0) {
         cout << "Failed to enable broadcast: " << WSAGetLastError() << endl;
@@ -104,8 +104,6 @@ void sendBroadcast() {
     broadcastAddr.sin_port = htons(9909);
     broadcastAddr.sin_addr.s_addr = INADDR_BROADCAST;
 
-    //string  message = "Server_IP=127.0.0.1;Port=9909";
-
     string serverIP = getLocalIPAddress();
     if (serverIP.empty()) {
         cout << "Unable to get server IP address" << endl;
@@ -114,7 +112,7 @@ void sendBroadcast() {
     }
 
     string message = "Server_IP=" + serverIP + ";Port=9909";
-
+    cout << message << endl;
     cout << "Broadcasting server information..." << endl;
     while (!isConnected) {
         sendto(udpSocket, message.c_str(), (int)strlen(message.c_str()), 0,
@@ -147,14 +145,14 @@ SOCKET acceptRequestFromClient(SOCKET nSocket) {
 void sendResponse(SOCKET& clientSocket, string jsonResponse) {
     int jsonSize = (int)jsonResponse.size();
 
-    // Gửi kích thước chuỗi JSON trước
+    // send the size of the JSON
     int result = send(clientSocket, reinterpret_cast<char*>(&jsonSize), sizeof(jsonSize), 0);
     if (result == SOCKET_ERROR) {
         cout << "Failed to send JSON size, error: " << WSAGetLastError() << endl;
         return;
     }
 
-    // Gửi nội dung chuỗi JSON
+    // send the content of the JSON
     int bytesSent = 0;
     while (bytesSent < jsonSize) {
         int bytesToSend = min(jsonSize - bytesSent, 1024);
@@ -194,7 +192,6 @@ void processRequests(SOCKET& clientSocket, SOCKET& nSocket) {
 				}
 			}
 
-            //processRequest(clientSocket, receiveBuffer);
             thread([&clientSocket, receiveBuffer]() {
                 processRequest(clientSocket, receiveBuffer);
                 }).detach();
@@ -357,15 +354,6 @@ void processRequest(SOCKET& clientSocket, string request) {
                 cout << "Record sent successfully" << endl;
             }
         }
-        //else {
-        //    json temp;
-
-        //    temp["title"] = "Error";
-        //    temp["result"] = "Your request is invalid. Please review and resend it";
-
-        //    response = temp.dump();
-        //    sendResponse(clientSocket, response);
-        //}
 		cout << "Request processed" << endl << endl;
     }
 }
