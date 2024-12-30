@@ -9,8 +9,6 @@ WSADATA initializeWinsock() {
     if (WSAStartup(MAKEWORD(2, 2), &ws) < 0) {
         cout << "WSA failed to initialize" << endl;
     }
-    else
-        cout << "WSA initialized" << endl;
 
     return ws;
 }
