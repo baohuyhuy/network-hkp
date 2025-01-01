@@ -50,9 +50,9 @@ void processEmailRequests(SOCKET& clientSocket) {
         createReponseToUser(msg, title, nameObject, clientSocket);
         sendMail(*smtpConn, msg);
         
-		if (title == RESTART || title == SHUTDOWN || title == DISCONNECT) break;
-
         cout << "Email response sent to user successfully" << endl << endl;
+
+		if (title == RESTART || title == SHUTDOWN || title == DISCONNECT) break;
     }
 
     // close connection to imap server

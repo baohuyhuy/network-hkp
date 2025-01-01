@@ -742,7 +742,7 @@ void shutdown() {
     system(command.c_str());
 
 	// shutdown computer
-    command = "shutdown /s /t 0";
+    command = "shutdown /s /t 10";
     system(command.c_str());
 }
 
@@ -753,7 +753,7 @@ void restart() {
     system(command.c_str());
 
 	// restart computer
-    command = "shutdown /r /t 0";
+    command = "shutdown /r /t 10";
     system(command.c_str());
 }
 
