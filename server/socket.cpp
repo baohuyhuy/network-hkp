@@ -328,9 +328,15 @@ void processRequest(SOCKET& clientSocket, string request) {
             sendResponse(clientSocket, response);
         }
         else if (command == SHUTDOWN) {
+            jsonResponse["status"] = "OK";
+            jsonResponse["result"] = "Successfully shutdown computer";
+            sendResponse(clientSocket, jsonResponse.dump());
             shutdown();
         }
         else if (command == RESTART) {
+            jsonResponse["status"] = "OK";
+            jsonResponse["result"] = "Successfully restart computer";
+            sendResponse(clientSocket, jsonResponse.dump());
             restart();
         }
         else if (command == LIST_DIRECTORY_TREE) {
