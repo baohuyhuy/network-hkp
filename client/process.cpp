@@ -338,28 +338,26 @@ void createReponseToUser(message& msg, string title, string arg, SOCKET& clientS
     }
 
     else if (title == RESTART) {
-        json j;
-        j["status"] = "OK";
-        j["result"] = "Successfully disconnect from server";
+        response = receiveResponseFromServer(clientSocket);
+        j = json::parse(response);
 
+        cout << "Message from server: " << j["result"] << endl;
         string body =
             "Status: " + ((string)j["status"]) + "\n"
             "Message: " + (string)j["result"];
 
-        message msg;
         createMessage(msg, "Restart Response", body);
     }
 
     else if (title == SHUTDOWN) {
-        json j;
-        j["status"] = "OK";
-        j["result"] = "Successfully disconnect from server";
+        response = receiveResponseFromServer(clientSocket);
+        j = json::parse(response);
 
+        cout << "Message from server: " << j["result"] << endl;
         string body =
             "Status: " + ((string)j["status"]) + "\n"
             "Message: " + (string)j["result"];
 
-        message msg;
         createMessage(msg, "Shutdown Response", body);
     }
 
@@ -417,14 +415,4 @@ void createReponseToUser(message& msg, string title, string arg, SOCKET& clientS
 
         createMessage(msg, "Disconnect Response", body);
     }
-
-
-
-    //else {
-    //    response = receiveResponseFromServer(clientSocket);
-    //    j = json::parse(response);
-
-    //    cout << "Message from server: " << j["result"] << endl;
-    //    createMessage(msg, "Socket Response", j.at("result"));
-    //}
 }
